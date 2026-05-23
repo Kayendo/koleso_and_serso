@@ -1,0 +1,118 @@
+{
+  "_comment": "Фразы комментатора на русском — voice только ru-RU или uk-UA. rate/pitch дают «характер».",
+  "mode": "random",
+  "characters": [
+    {
+      "id": "ded_moroz",
+      "label": "Дед Мороз",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "-30%",
+      "pitch": "-14Hz",
+      "enabled": true
+    },
+    {
+      "id": "drevniy_rus",
+      "label": "Древний рус",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "-38%",
+      "pitch": "-10Hz",
+      "enabled": true
+    },
+    {
+      "id": "peter_griffin",
+      "label": "Питер (быстрый мужик)",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "+18%",
+      "pitch": "+12Hz",
+      "enabled": true
+    },
+    {
+      "id": "babushka",
+      "label": "Бабушка",
+      "provider": "edge",
+      "voice": "ru-RU-SvetlanaNeural",
+      "rate": "+6%",
+      "pitch": "+6Hz",
+      "enabled": true
+    },
+    {
+      "id": "zombie",
+      "label": "Зомби / одержимый",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "-42%",
+      "pitch": "-18Hz",
+      "enabled": true
+    },
+    {
+      "id": "chipmunk",
+      "label": "Бурундук",
+      "provider": "edge",
+      "voice": "ru-RU-SvetlanaNeural",
+      "rate": "+28%",
+      "pitch": "+18Hz",
+      "enabled": true
+    },
+    {
+      "id": "narrator_epic",
+      "label": "Эпичный диктор",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "-12%",
+      "pitch": "-6Hz",
+      "enabled": true
+    },
+    {
+      "id": "villain",
+      "label": "Злодей",
+      "provider": "edge",
+      "voice": "ru-RU-DmitryNeural",
+      "rate": "-18%",
+      "pitch": "-10Hz",
+      "enabled": true
+    },
+    {
+      "id": "drunk_uncle",
+      "label": "Пьяный дядя",
+      "provider": "edge",
+      "voice": "uk-UA-OstapNeural",
+      "rate": "-15%",
+      "pitch": "-8Hz",
+      "enabled": true
+    },
+    {
+      "id": "silero_aidar",
+      "label": "Silero — грубый мужик",
+      "provider": "silero",
+      "sileroSpeaker": "aidar",
+      "sileroSpeed": 0.95,
+      "enabled": false
+    },
+    {
+      "id": "silero_baya",
+      "label": "Silero — бабка",
+      "provider": "silero",
+      "sileroSpeaker": "baya",
+      "sileroSpeed": 1.05,
+      "enabled": false
+    },
+    {
+      "id": "silero_xenia",
+      "label": "Silero — молодая",
+      "provider": "silero",
+      "sileroSpeaker": "xenia",
+      "sileroSpeed": 1.1,
+      "enabled": false
+    },
+    {
+      "id": "custom_http",
+      "label": "Свой RVC/XTTS (HTTP)",
+      "provider": "http",
+      "httpUrl": "http://127.0.0.1:7860/tts",
+      "enabled": false
+    }
+  ]
+}

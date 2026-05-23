@@ -498,3 +498,23 @@ def http_open_reward_wheel():
     if isinstance(result, tuple):
         return jsonify(result[0]), result[1]
     return jsonify(result)
+
+
+@api.route("/ai/voices")
+def ai_voices():
+    """Голоса Edge TTS + ростер персонажей (data/ai_tts_characters.json)."""
+    from backend.ai_tts import voices_for_api
+
+    return jsonify(voices_for_api())
+
+
+@api.route("/comment/status")
+def comment_status():
+    from backend.comment_scheduler import enabled, get_last_error, is_started
+    from backend.commentator import status as commentator_status
+
+    st = commentator_status()
+    st["enabled"] = enabled()
+    st["schedulerStarted"] = is_started()
+    st["lastError"] = get_last_error()
+    return jsonify(st)

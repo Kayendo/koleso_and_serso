@@ -72,6 +72,15 @@ cd frontend && npm run dev
 - **sudya** — судья (`is_judge`) и админ; может задать часы игры без HLTB.
 - Карту могут смотреть без логина; ходы и профиль — только после входа.
 
+## Комментатор (фразы + озвучка, без нейросети)
+
+Раз в 30–40 с случайная фраза из `data/ai_comment_phrases.jsonl` под ситуацию игрока + Edge TTS. Сокет `game_comment`.
+
+- Статус: `http://127.0.0.1:5000/api/comment/status`
+- Голоса: `http://127.0.0.1:5000/api/ai/voices`
+- `.env`: `COMMENTATOR_*`, `AI_TTS_VOICE` — см. `.env.example` и `data/VOICES.md`
+- Фразы не грузятся при старте страницы — только в фоне на сервере при первом тике
+
 ## Логотипы компаний
 
 Положите изображения в `frontend/public/logos/<company_key>.png` (ключи из `backend/board.py`, например `blazerd.png`, `legko.png`) — подключение в UI можно добавить следующим шагом.

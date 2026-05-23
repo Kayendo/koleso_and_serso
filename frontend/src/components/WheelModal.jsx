@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "../api";
+import { animateProgress } from "../wallClock";
 
 const SPIN_MS = 2800;
 const SIZE = 520;
@@ -347,17 +348,16 @@ export default function WheelModal({
     const slice = 360 / n;
     const targetAngle = 360 - spinCommand.targetIndex * slice - slice / 2;
     const extra = 4 * 360 + targetAngle;
-    const start = performance.now();
 
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / SPIN_MS);
-      const ease = 1 - Math.pow(1 - t, 3);
-      const rot = extra * ease;
-      setRotation(rot);
-      drawWheel(rot, true);
-      if (t < 1) {
-        requestAnimationFrame(tick);
-      } else {
+    animateProgress(
+      SPIN_MS,
+      (t) => {
+        const ease = 1 - Math.pow(1 - t, 3);
+        const rot = extra * ease;
+        setRotation(rot);
+        drawWheel(rot, true);
+      },
+      () => {
         if (spinCommand.crownPick?.choices?.length) {
           setNeighborPick(spinCommand.crownPick);
           setSelected(null);
@@ -379,8 +379,7 @@ export default function WheelModal({
         setDone(true);
         setSpinning(false);
       }
-    };
-    requestAnimationFrame(tick);
+    );
   }, [spinCommand, sessionId, games, list, drawWheel]);
 
   const busy = !!actionLoading;

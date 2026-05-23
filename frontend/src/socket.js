@@ -9,7 +9,7 @@ export function getSocket() {
       withCredentials: true,
       transports: ["websocket", "polling"],
     });
-    socket.emit("join");
+    socket.on("connect", () => socket.emit("join"));
   }
   return socket;
 }

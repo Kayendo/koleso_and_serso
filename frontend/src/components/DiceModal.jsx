@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-const RESULT_MS = 4200;
+const ROLL_TICKS = 6;
+const ROLL_MS = 50;
 
 export default function DiceModal({
   dice,
@@ -10,35 +11,40 @@ export default function DiceModal({
   steps,
   label,
   showEffects = true,
-  onDone,
+  onRollComplete,
 }) {
-  const faces =
-    rawDice?.length >= 2 ? rawDice : dice?.length >= 2 ? dice : dice;
+  const faces = useMemo(() => {
+    const d = rawDice?.length >= 2 ? rawDice : dice?.length >= 2 ? dice : dice;
+    return Array.isArray(d) ? [...d] : [1, 1];
+  }, [rawDice, dice]);
+
+  const facesKey = useMemo(() => faces.join(","), [faces]);
+  const onCompleteRef = useRef(onRollComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onRollComplete;
+  }, [onRollComplete]);
+
   const [shown, setShown] = useState([1, 1]);
   const [phase, setPhase] = useState("rolling");
 
   useEffect(() => {
-    if (!faces?.length) return undefined;
+    if (!facesKey) return undefined;
     setPhase("rolling");
     let step = 0;
     const t = setInterval(() => {
       const r = () => 1 + Math.floor(Math.random() * 6);
       setShown(faces.length === 1 ? [r()] : [r(), r()]);
       step += 1;
-      if (step > 12) {
+      if (step >= ROLL_TICKS) {
         clearInterval(t);
         setShown(faces);
         setPhase("result");
+        onCompleteRef.current?.();
       }
-    }, 80);
+    }, ROLL_MS);
     return () => clearInterval(t);
-  }, [faces]);
-
-  useEffect(() => {
-    if (phase !== "result") return undefined;
-    const t = setTimeout(() => onDone?.(), RESULT_MS);
-    return () => clearTimeout(t);
-  }, [phase, onDone]);
+  }, [facesKey, faces.length]);
 
   if (!dice?.length) return null;
 
@@ -52,7 +58,8 @@ export default function DiceModal({
     <div className="overlay overlay-spectate">
       <div className="modal-square dice-modal">
         <p className="spectate-actor">
-          {actorUsername} {phase === "rolling" ? "бросает кубики" : "бросил кубики"}
+          {actorUsername}{" "}
+          {phase === "rolling" ? "бросает кубики" : "бросил кубики"}
         </p>
         <div className="dice-row">
           {faces.length === 1 ? (
@@ -77,7 +84,9 @@ export default function DiceModal({
                 <p className="dice-effects-title">Что изменило бросок</p>
                 <ul className="dice-effects-list">
                   {factors.length > 0 ? (
-                    factors.map((f, i) => <li key={i}>{f}</li>)
+                    factors.map((f, i) => (
+                      <li key={i}>{f}</li>
+                    ))
                   ) : (
                     <li className="muted">Сумма изменена модификаторами</li>
                   )}

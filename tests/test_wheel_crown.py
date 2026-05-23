@@ -3,7 +3,7 @@
 from backend.items.gameplay import activate_buff_for_next_game
 from backend.items.modifiers import _has_mod
 from backend.services.turn_service import roll_dice
-from backend.turn_actions import _animate_and_finish, roll_dice_for_user
+from backend.turn_actions import roll_dice_for_user
 from backend.items.inventory import tick_modifiers_after_turn
 
 from tests.conftest import mod_keys, reset_player

@@ -3,6 +3,7 @@ import {
   inwardArcUnit,
   tokenSizeFraction,
 } from "./boardLayout";
+import { animateProgress } from "./wallClock";
 
 function easeSmooth(t) {
   return t * t * (3 - 2 * t);
@@ -16,45 +17,40 @@ function animateLeg({
   durationMs,
   setFlyingToken,
 }) {
+  const from = cellCenterPercent(fromCell);
+  const to = cellCenterPercent(toCell);
+  const inward = inwardArcUnit(toCell);
+  const arcScale = 1.8;
+  const sizeFrac = tokenSizeFraction(1);
+
+  setFlyingToken({
+    userId,
+    avatarUrl,
+    left: from.left,
+    top: from.top,
+    sizeFrac,
+  });
+
   return new Promise((resolve) => {
-    const from = cellCenterPercent(fromCell);
-    const to = cellCenterPercent(toCell);
-    const inward = inwardArcUnit(toCell);
-    const arcScale = 1.8;
-    const start = performance.now();
-    const sizeFrac = tokenSizeFraction(1);
-
-    setFlyingToken({
-      userId,
-      avatarUrl,
-      left: from.left,
-      top: from.top,
-      sizeFrac,
-    });
-
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / durationMs);
-      const e = easeSmooth(t);
-      const arc = 4 * e * (1 - e);
-      const left =
-        from.left + (to.left - from.left) * e + inward.x * arcScale * arc;
-      const top = from.top + (to.top - from.top) * e + inward.y * arcScale * arc;
-
-      setFlyingToken({
-        userId,
-        avatarUrl,
-        left,
-        top,
-        sizeFrac,
-      });
-
-      if (t < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        resolve();
-      }
-    };
-    requestAnimationFrame(tick);
+    animateProgress(
+      durationMs,
+      (t) => {
+        const e = easeSmooth(t);
+        const arc = 4 * e * (1 - e);
+        const left =
+          from.left + (to.left - from.left) * e + inward.x * arcScale * arc;
+        const top =
+          from.top + (to.top - from.top) * e + inward.y * arcScale * arc;
+        setFlyingToken({
+          userId,
+          avatarUrl,
+          left,
+          top,
+          sizeFrac,
+        });
+      },
+      resolve
+    );
   });
 }
 

@@ -31,6 +31,8 @@ def _is_oops_wheel_item(item: dict) -> bool:
 _pending_wheel: dict[int, list[str]] = {}
 _pending_item_wheel: dict[int, list[dict]] = {}
 _pending_dice_choice: dict[int, dict] = {}
+
+STEP_DELAY_SEC = 0.65
 _pending_crown_pick: dict[int, dict] = {}
 _pending_oops_pick: dict[int, dict] = {}
 
@@ -249,7 +251,7 @@ def reveal_trinity_dice_for_user(user: User) -> dict | tuple[dict, int]:
 def _finish_dice_roll(
     user: User, d1: int, d2: int, options: dict | None = None
 ) -> dict:
-    from backend.items.modifiers import apply_dice_roll
+    from backend.items.modifiers import apply_dice_roll, build_move_path
 
     options = options or {}
     d1, d2, steps, label, move_meta, factors = apply_dice_roll(
@@ -269,23 +271,54 @@ def _finish_dice_roll(
         "factors": factors,
         "user": user.to_public_dict(),
     }
+    backward = bool(move_meta.get("backward"))
+    path, new_pos, passed = build_move_path(
+        user.position, steps, backward=backward
+    )
+    step_ms = int(STEP_DELAY_SEC * 1000)
+    from_pos = user.position
+    avatar = user.avatar_url or "/avatars/default.png"
+
+    payload["path"] = path
+    payload["moveNewPosition"] = new_pos
+    payload["stepMs"] = step_ms
+    payload["avatarUrl"] = avatar
+
     _emit("dice_rolled", payload)
+
+    if path:
+        _emit(
+            "token_move_path",
+            {
+                **_user_payload(user),
+                "fromPosition": from_pos,
+                "path": path,
+                "stepMs": step_ms,
+                "avatarUrl": avatar,
+            },
+        )
+
+    payload["user"] = user.to_public_dict()
+
     _socketio().start_background_task(
-        _animate_and_finish,
+        _commit_move_after_anim,
         user.id,
-        steps,
+        path,
+        new_pos,
+        passed,
         label,
         move_meta,
         factors,
         current_app._get_current_object(),
     )
-    payload["user"] = user.to_public_dict()
     return payload
 
 
-def _animate_and_finish(
+def _commit_move_after_anim(
     user_id: int,
-    steps: int,
+    path: list[int],
+    new_pos: int,
+    passed: bool,
     label: str,
     move_meta: dict,
     factors: list,
@@ -294,35 +327,22 @@ def _animate_and_finish(
     import time
 
     from backend.items.inventory import log_turn
-    from backend.items.modifiers import build_move_path, tick_turn_modifiers
+    from backend.items.modifiers import tick_turn_modifiers
 
-    time.sleep(2.2)
-    step_delay = 0.72
-    backward = bool(move_meta.get("backward"))
-
+    anim_sec = len(path) * STEP_DELAY_SEC + 0.12 if path else 0.05
+    time.sleep(anim_sec)
     with app.app_context():
         user = db.session.get(User, user_id)
         if not user or user.turn_phase != "rolling":
             return
 
-        path, new_pos, passed = build_move_path(
-            user.position, steps, backward=backward
+        backward = bool(move_meta.get("backward"))
+
+        bonus = (
+            apply_start_bonus(user, passed)
+            if not user.in_durka and not backward
+            else 0
         )
-
-        _emit(
-            "token_move_path",
-            {
-                **_user_payload(user),
-                "fromPosition": user.position,
-                "path": path,
-                "stepMs": int(step_delay * 1000),
-                "avatarUrl": user.avatar_url or "/avatars/default.png",
-            },
-        )
-
-        time.sleep(len(path) * step_delay + 0.2)
-
-        bonus = apply_start_bonus(user, passed) if not user.in_durka and not backward else 0
         user.position = new_pos
         user.turn_phase = "wheel_ready"
         db.session.commit()

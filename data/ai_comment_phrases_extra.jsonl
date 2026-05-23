@@ -1,0 +1,3 @@
+# Дополнительные фразы — по одной JSON-строке на строку (как в ai_comment_phrases.jsonl).
+# Пример:
+# {"text": "{name}, твоя кастомная фраза про {game}.", "tags": ["game"], "whole": false}

@@ -9,6 +9,8 @@ import pytest
 
 os.environ.setdefault("DATABASE_URI", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("COMMENTATOR_ENABLED", "0")
+os.environ.setdefault("AI_COMMENTATOR_ENABLED", "0")
 
 from backend.accounts import PLAYER_ACCOUNTS
 from backend.app import create_app

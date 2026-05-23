@@ -8,6 +8,9 @@ UPLOAD_DIR = BASE_DIR / "uploads" / "avatars"
 SECRET_KEY = os.environ.get("SECRET_KEY", "kolesoblya-dev-change-me")
 TENOR_API_KEY = os.environ.get("TENOR_API_KEY", "LIVDSRZULELA")
 TENOR_CLIENT_KEY = os.environ.get("TENOR_CLIENT_KEY", "kolesoblya")
+
+# Озвучка Edge TTS — см. data/ai_tts_characters.json и GET /api/ai/voices
+AI_TTS_VOICE = os.environ.get("AI_TTS_VOICE", "random")
 DATABASE_URI = os.environ.get(
     "DATABASE_URI", f"sqlite:///{BASE_DIR / 'kolesoblya.db'}"
 )

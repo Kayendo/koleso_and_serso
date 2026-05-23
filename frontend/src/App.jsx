@@ -18,6 +18,9 @@ import {
   LoginModal,
   ProfileModal,
 } from "./components/Modals";
+import { unlockAudio } from "./audioUnlock";
+import { playGameComment } from "./commentVoice";
+import CommentOverlay from "./components/CommentOverlay";
 
 export default function App() {
   const [cells, setCells] = useState([]);
@@ -46,15 +49,23 @@ export default function App() {
   const [animPositions, setAnimPositions] = useState({});
   const [flyingToken, setFlyingToken] = useState(null);
   const [centerGif, setCenterGif] = useState(null);
+  const [gameComment, setGameComment] = useState(null);
   const phaseSigRef = useRef("");
   const wheelSessionRef = useRef(0);
   const pendingMoveRef = useRef(null);
+  const pendingMovePayloadRef = useRef(null);
+  const diceResultReadyRef = useRef(false);
+  const lastMoveKeyRef = useRef("");
+  const moveAnimatingRef = useRef(null);
+  const deferredUserSyncRef = useRef(null);
+  const pathQueueRef = useRef(Promise.resolve());
   const rewardChainRef = useRef(false);
   const beginRewardWheelsRef = useRef(null);
   const wheelRecoveryRef = useRef(false);
   const syncPlayerStateRef = useRef(null);
   const refreshPlayersRef = useRef(null);
   const applyMoveFinishedRef = useRef(null);
+  const runTokenMoveRef = useRef(null);
   const openWheelAfterMoveRef = useRef(null);
 
   const myIdRef = useRef(null);
@@ -152,28 +163,77 @@ export default function App() {
     [syncPlayerState]
   );
 
-  const applyMoveFinished = useCallback(
-    async (p) => {
-      syncPlayerState(p.user);
-      pendingMoveRef.current = {
-        userId: p.userId,
-        username: p.username,
-        source: p.source,
-        cell: p.cell,
-      };
-      if (myIdRef.current === p.userId) {
-        setTurnError("");
+  const movePayloadKey = (p) =>
+    `${p.userId}:${p.fromPosition}:${(p.path || []).join(",")}`;
+
+  const tryStartTokenMove = useRef(() => {});
+
+  const runTokenMove = useCallback((p) => {
+    if (!p?.path?.length) return;
+    const key = movePayloadKey(p);
+    if (lastMoveKeyRef.current === key) return;
+    lastMoveKeyRef.current = key;
+    setDiceSpectacle(null);
+
+    pathQueueRef.current = pathQueueRef.current.then(async () => {
+      moveAnimatingRef.current = p.userId;
+      try {
+        await runTokenPath({
+          userId: p.userId,
+          path: p.path,
+          fromPosition: p.fromPosition,
+          stepMs: p.stepMs || 650,
+          avatarUrl: p.avatarUrl || "/avatars/default.png",
+          setFlyingToken,
+          setAnimPositions,
+          setPlayers,
+        });
+      } finally {
+        moveAnimatingRef.current = null;
+        const deferred = deferredUserSyncRef.current;
+        if (deferred?.id === p.userId) {
+          syncPlayerState(deferred);
+          deferredUserSyncRef.current = null;
+        }
+        setAnimPositions((prev) => {
+          if (prev[p.userId] === undefined) return prev;
+          const next = { ...prev };
+          delete next[p.userId];
+          return next;
+        });
+        const pending = pendingMoveRef.current;
+        if (myIdRef.current === p.userId && pending?.userId === p.userId) {
+          pendingMoveRef.current = null;
+          await openWheelAfterMove(pending);
+        }
       }
-    },
-    [syncPlayerState]
-  );
+    });
+  }, [syncPlayerState, openWheelAfterMove]);
+
+  const applyMoveFinished = useCallback((p) => {
+    pendingMoveRef.current = {
+      userId: p.userId,
+      username: p.username,
+      source: p.source,
+      cell: p.cell,
+    };
+    if (myIdRef.current === p.userId) {
+      setTurnError("");
+    }
+    if (moveAnimatingRef.current === p.userId) {
+      deferredUserSyncRef.current = p.user;
+      return;
+    }
+    syncPlayerState(p.user);
+  }, [syncPlayerState]);
 
   useEffect(() => {
     syncPlayerStateRef.current = syncPlayerState;
     refreshPlayersRef.current = refreshPlayers;
     applyMoveFinishedRef.current = applyMoveFinished;
+    runTokenMoveRef.current = runTokenMove;
     openWheelAfterMoveRef.current = openWheelAfterMove;
-  }, [syncPlayerState, refreshPlayers, applyMoveFinished, openWheelAfterMove]);
+  }, [syncPlayerState, refreshPlayers, applyMoveFinished, runTokenMove, openWheelAfterMove]);
 
   useEffect(() => {
     apiGet("/board").then(setCells);
@@ -183,10 +243,25 @@ export default function App() {
   }, [refreshPlayers]);
 
   useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener("pointerdown", unlock, { once: false, passive: true });
+    window.addEventListener("keydown", unlock, { once: false, passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
     const s = getSocket();
 
     const onDice = (p) => {
-      syncPlayerStateRef.current?.(p.user);
+      lastMoveKeyRef.current = "";
+      diceResultReadyRef.current = false;
+      pendingMovePayloadRef.current = null;
+      if (moveAnimatingRef.current !== p.userId) {
+        syncPlayerStateRef.current?.(p.user);
+      }
       const isMe = myIdRef.current === p.userId;
 
       if (p.needsDiceChoice?.type === "trinity" && isMe) {
@@ -221,21 +296,20 @@ export default function App() {
       });
     };
 
-    const onPath = async (p) => {
-      await runTokenPath({
-        userId: p.userId,
-        path: p.path,
-        fromPosition: p.fromPosition,
-        stepMs: p.stepMs || 780,
-        avatarUrl: p.avatarUrl || "/avatars/default.png",
-        setFlyingToken,
-        setAnimPositions,
-        setPlayers,
-      });
-      if (myIdRef.current === p.userId && pendingMoveRef.current) {
-        await openWheelAfterMoveRef.current?.(pendingMoveRef.current);
-        pendingMoveRef.current = null;
+    const onPath = (p) => {
+      if (!p?.path?.length) return;
+      pendingMovePayloadRef.current = p;
+      if (diceResultReadyRef.current) {
+        runTokenMoveRef.current?.(p);
+        pendingMovePayloadRef.current = null;
       }
+    };
+
+    tryStartTokenMove.current = () => {
+      const payload = pendingMovePayloadRef.current;
+      if (!diceResultReadyRef.current || !payload?.path?.length) return;
+      pendingMovePayloadRef.current = null;
+      runTokenMoveRef.current?.(payload);
     };
 
     const onFinished = (p) => {
@@ -325,7 +399,22 @@ export default function App() {
       if (err?.message && myIdRef.current) setTurnError(err.message);
     };
 
-    s.on("board_state", (st) => setPlayers(st.players || []));
+    const onGameComment = (p) => {
+      if (p?.text) playGameComment(p, setGameComment);
+    };
+
+    const onSocketConnect = () => {
+      s.emit("join");
+    };
+
+    if (s.connected) onSocketConnect();
+    s.on("connect", onSocketConnect);
+
+    s.on("board_state", (st) => {
+      if (moveAnimatingRef.current) return;
+      setPlayers(st.players || []);
+    });
+    s.on("game_comment", onGameComment);
     s.on("dice_rolled", onDice);
     s.on("token_move_path", onPath);
     s.on("move_finished", onFinished);
@@ -339,7 +428,9 @@ export default function App() {
     s.on("error", onError);
 
     return () => {
+      s.off("connect", onSocketConnect);
       s.off("board_state");
+      s.off("game_comment", onGameComment);
       s.off("dice_rolled", onDice);
       s.off("token_move_path", onPath);
       s.off("move_finished", onFinished);
@@ -474,16 +565,7 @@ export default function App() {
         });
       } else if (data.steps != null && data.dice) {
         setPendingDiceLabel(data.label || "");
-        setDiceSpectacle({
-          username: data.username || currentUser?.username,
-          dice: data.dice,
-          rawDice: data.rawDice,
-          userId: data.userId || currentUser?.id,
-          factors: data.factors || [],
-          steps: data.steps,
-          label: data.label,
-          showEffects: true,
-        });
+        /* Модалка кубика только с сокета dice_rolled — без двойного запуска анимации */
       }
     });
   };
@@ -603,6 +685,19 @@ export default function App() {
 
   beginRewardWheelsRef.current = beginRewardWheels;
 
+  const finishDiceSpectacle = useCallback((spec) => {
+    setDiceSpectacle(null);
+    if (spec?.awaitingCheatChoice && myIdRef.current === spec.userId) {
+      setDiceChoice({ type: "cheat", dice: spec.dice });
+    }
+  }, []);
+
+  const handleDiceRollComplete = useCallback(() => {
+    diceResultReadyRef.current = true;
+    setDiceSpectacle(null);
+    tryStartTokenMove.current();
+  }, []);
+
   const confirmWheel = async (payload) => {
     const isReward =
       wheelSpectacle?.wheelType === "reward_item" ||
@@ -622,6 +717,10 @@ export default function App() {
         setTurnError("Выберите соседний пункт");
         return;
       }
+      setWheelSpectacle(null);
+      setSpinCommand(null);
+      setWheelMeta(null);
+      setWheelHltbItems([]);
       await runAction("confirm", async () => {
         const data = await apiPost("/turn/confirm-wheel", {
           ...payload,
@@ -641,10 +740,6 @@ export default function App() {
           setRewardDiceRolled(false);
         }
         rewardChainRef.current = false;
-        setWheelSpectacle(null);
-        setSpinCommand(null);
-        setWheelMeta(null);
-        setWheelHltbItems([]);
       });
       return;
     }
@@ -653,18 +748,19 @@ export default function App() {
       setTurnError("Выберите игру под колесом");
       return;
     }
+    const savedMeta = wheelMeta;
+    setWheelSpectacle(null);
+    setSpinCommand(null);
+    setWheelMeta(null);
+    setWheelHltbItems([]);
     await runAction("confirm", async () => {
       const data = await apiPost("/turn/confirm-wheel", {
         ...payload,
         selectedGame: title,
         diceLabel: pendingDiceLabel,
-        genreId: wheelMeta?.genreId ?? payload.genreId,
+        genreId: savedMeta?.genreId ?? payload.genreId,
       });
       if (data.user) syncPlayerState(data.user);
-      setWheelSpectacle(null);
-      setSpinCommand(null);
-      setWheelMeta(null);
-      setWheelHltbItems([]);
     });
   };
 
@@ -774,7 +870,7 @@ export default function App() {
           onDone={(data) => {
             if (data.user) syncPlayerState(data.user);
             setDiceChoice(null);
-            refreshPlayers();
+            if (!moveAnimatingRef.current) refreshPlayers();
           }}
         />
       )}
@@ -796,18 +892,11 @@ export default function App() {
           steps={diceSpectacle.steps}
           label={diceSpectacle.label}
           showEffects={diceSpectacle.showEffects !== false}
-          onDone={() => {
-            const spec = diceSpectacle;
-            setDiceSpectacle(null);
-            if (
-              spec?.awaitingCheatChoice &&
-              myIdRef.current === spec.userId
-            ) {
-              setDiceChoice({ type: "cheat", dice: spec.dice });
-            }
-          }}
+          onRollComplete={handleDiceRollComplete}
         />
       )}
+
+      <CommentOverlay state={gameComment} />
 
       {wheelSpectacle && (
         <WheelModal

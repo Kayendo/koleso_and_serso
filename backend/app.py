@@ -24,6 +24,13 @@ def load_user(user_id: str):
 
 
 def create_app() -> Flask:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(BASE_DIR / ".env")
+    except ImportError:
+        pass
+
     app = Flask(
         __name__,
         static_folder=str(BASE_DIR / "frontend" / "dist"),

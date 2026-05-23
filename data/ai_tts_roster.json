@@ -1,0 +1,26 @@
+{
+  "_comment": "Включи enabled:true у персонажей для озвучки. mode: random | first. Или один голос в .env: AI_TTS_VOICE=ru-RU-DmitryNeural",
+  "mode": "random",
+  "pool": [
+    {"id": "ru-RU-DmitryNeural", "rate": "+0%", "pitch": "+0Hz", "label": "RU муж, Дмитрий", "enabled": true},
+    {"id": "ru-RU-SvetlanaNeural", "rate": "+8%", "pitch": "+4Hz", "label": "RU жен, Светлана", "enabled": true},
+    {"id": "uk-UA-OstapNeural", "rate": "+4%", "pitch": "+0Hz", "label": "UA муж, Остап", "enabled": true},
+    {"id": "uk-UA-PolinaNeural", "rate": "+12%", "pitch": "+8Hz", "label": "UA жен, Полина", "enabled": true},
+    {"id": "en-US-GuyNeural", "rate": "+5%", "pitch": "+0Hz", "label": "US муж, Guy", "enabled": true},
+    {"id": "en-US-JennyNeural", "rate": "+10%", "pitch": "+6Hz", "label": "US жен, Jenny", "enabled": true},
+    {"id": "en-GB-RyanNeural", "rate": "+0%", "pitch": "-2Hz", "label": "UK муж, Ryan", "enabled": true},
+    {"id": "en-GB-SoniaNeural", "rate": "+6%", "pitch": "+3Hz", "label": "UK жен, Sonia", "enabled": true},
+    {"id": "de-DE-ConradNeural", "rate": "-8%", "pitch": "-6Hz", "label": "DE муж, Conrad", "enabled": true},
+    {"id": "de-DE-KatjaNeural", "rate": "+7%", "pitch": "+5Hz", "label": "DE жен, Katja", "enabled": true},
+    {"id": "fr-FR-HenriNeural", "rate": "+3%", "pitch": "+2Hz", "label": "FR муж, Henri", "enabled": true},
+    {"id": "fr-FR-DeniseNeural", "rate": "+9%", "pitch": "+5Hz", "label": "FR жен, Denise", "enabled": true},
+    {"id": "es-ES-AlvaroNeural", "rate": "+11%", "pitch": "+4Hz", "label": "ES муж, Alvaro", "enabled": true},
+    {"id": "es-ES-ElviraNeural", "rate": "+8%", "pitch": "+6Hz", "label": "ES жен, Elvira", "enabled": true},
+    {"id": "it-IT-DiegoNeural", "rate": "+5%", "pitch": "+1Hz", "label": "IT муж, Diego", "enabled": true},
+    {"id": "pl-PL-MarekNeural", "rate": "-5%", "pitch": "-4Hz", "label": "PL муж, Marek", "enabled": false},
+    {"id": "ja-JP-KeitaNeural", "rate": "+0%", "pitch": "+0Hz", "label": "JP муж, Keita", "enabled": false},
+    {"id": "ko-KR-InJoonNeural", "rate": "+0%", "pitch": "+0Hz", "label": "KR муж, InJoon", "enabled": false},
+    {"id": "zh-CN-YunxiNeural", "rate": "+0%", "pitch": "+0Hz", "label": "CN муж, Yunxi", "enabled": false},
+    {"id": "pt-BR-AntonioNeural", "rate": "+6%", "pitch": "+2Hz", "label": "BR муж, Antonio", "enabled": false}
+  ]
+}
