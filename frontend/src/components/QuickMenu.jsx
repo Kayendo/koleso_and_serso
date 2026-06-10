@@ -1,10 +1,16 @@
+import { useEffect, useState } from "react";
+import { apiGet } from "../api";
+import { fetchGenres, genreButtonLabel } from "../genres";
 import { phaseLabel } from "../phaseLabels";
+import { playerName } from "../playerName";
+import GenrePicker from "./GenrePicker";
 
 const LOADING = "Загрузка...";
 
 export default function QuickMenu({
   onOpen,
   currentUser,
+  cells,
   onLogin,
   onLogout,
   hoverCell,
@@ -13,11 +19,32 @@ export default function QuickMenu({
   onRollDice,
   onDurkaRoll,
   onOpenWheel,
+  onOpenExtraWheel,
   onOpenRewardWheel,
+  onDurkaStepForward,
+  onDurkaStepBackward,
   rewardSpins = 0,
   rewardDiceRolled = false,
   onRollRewardDice,
 }) {
+  const [genres, setGenres] = useState([]);
+  const [pickedGenreId, setPickedGenreId] = useState("");
+
+  const adminFx = currentUser?.adminWheelEffect;
+  const adminItemPending = currentUser?.adminItemGrantPending;
+
+  useEffect(() => {
+    fetchGenres(apiGet).then(setGenres);
+  }, []);
+
+  useEffect(() => {
+    setPickedGenreId("");
+  }, [adminFx?.itemId, adminFx?.genreId, currentUser?.position]);
+
+  const currentCell = cells?.find((c) => c.id === currentUser?.position);
+  const isBlazerd = currentCell?.companyKey === "blazerd";
+  const isItemWheelCell = currentCell?.type === "trap_joy";
+
   const items = [
     { id: "rules", label: "Правила", icon: "📜" },
     { id: "history", label: "История игр", icon: "📋" },
@@ -34,12 +61,22 @@ export default function QuickMenu({
   }
 
   const phase = currentUser?.turnPhase;
+  const ongoingGame = currentUser?.ongoingGame;
   const isPlayer = currentUser?.isPlayer !== false;
   const busy = !!actionLoading;
 
+  const genreLocked = adminFx?.genreId != null;
+  const needsGenrePick =
+    (adminFx && !genreLocked) || (isBlazerd && !adminFx && !isItemWheelCell);
+
+  const lockedGenreLabel =
+    adminFx?.genreLabel ||
+    genreButtonLabel(genres.find((g) => g.id === adminFx?.genreId));
+
   let turnButton = null;
   if (isPlayer && currentUser) {
-    if (phase === "idle" && !currentUser.inDurka) {
+    if (phase === "idle" && !currentUser.inDurka && !ongoingGame) {
+      const onStart = currentUser.position === 0;
       const loading = actionLoading === "dice";
       turnButton = (
         <button
@@ -47,8 +84,45 @@ export default function QuickMenu({
           onClick={onRollDice}
           disabled={busy}
         >
-          {loading ? LOADING : "Бросить кубик"}
+          {loading
+            ? LOADING
+            : onStart
+              ? "Бросить кубик (старт)"
+              : "Бросить кубик"}
         </button>
+      );
+    } else if (phase === "idle" && ongoingGame) {
+      turnButton =
+        ongoingGame.status === "pending_admin" ? (
+          <p className="muted turn-hint">
+            Игра «{ongoingGame.title}» ждёт назначения админом. Новый ход после
+            прохождения.
+          </p>
+        ) : (
+          <p className="muted turn-hint">
+            Откройте профиль: отзыв и оценка → «Игра пройдена» или дроп
+          </p>
+        );
+    } else if (phase === "durka_choice") {
+      const loadingFwd = actionLoading === "durkaForward";
+      const loadingBack = actionLoading === "durkaBack";
+      turnButton = (
+        <div className="durka-choice-buttons">
+          <button
+            className="btn primary full"
+            onClick={onDurkaStepForward}
+            disabled={busy}
+          >
+            {loadingFwd ? LOADING : "Шаг вперёд"}
+          </button>
+          <button
+            className="btn primary full"
+            onClick={onDurkaStepBackward}
+            disabled={busy}
+          >
+            {loadingBack ? LOADING : "Шаг назад"}
+          </button>
+        </div>
       );
     } else if (phase === "durka") {
       const loading = actionLoading === "durka";
@@ -63,15 +137,74 @@ export default function QuickMenu({
       );
     } else if (phase === "wheel_ready") {
       const loading = actionLoading === "wheel";
-      turnButton = (
-        <button
-          className="btn primary full"
-          onClick={onOpenWheel}
-          disabled={busy}
-        >
-          {loading ? LOADING : "Крутить колесо / лотерея"}
-        </button>
-      );
+
+      if (adminFx || needsGenrePick) {
+        turnButton = (
+          <div className="admin-wheel-turn">
+            <p className="muted turn-hint">
+              {adminFx
+                ? `«${adminFx.name}» — выберите жанр и роллите игру`
+                : "Выберите жанр и роллите игру"}
+            </p>
+            {!genreLocked && (
+              <GenrePicker
+                genres={genres}
+                value={pickedGenreId}
+                onChange={setPickedGenreId}
+                disabled={busy}
+              />
+            )}
+            {genreLocked && (
+              <p className="muted turn-hint">Жанр: {lockedGenreLabel || "—"}</p>
+            )}
+            <button
+              className="btn primary full"
+              onClick={() => {
+                const gid = genreLocked
+                  ? adminFx.genreId
+                  : pickedGenreId
+                    ? parseInt(pickedGenreId, 10)
+                    : null;
+                if (!gid) return;
+                onOpenWheel(gid);
+              }}
+              disabled={busy || (!genreLocked && !pickedGenreId)}
+            >
+              {loading ? LOADING : "Роллить игру"}
+            </button>
+          </div>
+        );
+      } else if (adminItemPending) {
+        turnButton = (
+          <p className="muted turn-hint">
+            {adminItemPending.banner || adminItemPending.effectName}: предметы
+            выдаст админ
+          </p>
+        );
+      } else {
+        const extras = currentUser.extraWheelSpinsRemaining ?? 0;
+        turnButton = (
+          <>
+            {extras > 0 && (
+              <button
+                className="btn primary full"
+                style={{ marginBottom: "0.5rem" }}
+                onClick={() => onOpenExtraWheel?.()}
+                disabled={busy}
+              >
+                {loading ? LOADING : `Колесо приколов (${extras})`}
+              </button>
+            )}
+            <button
+              className="btn primary full"
+              onClick={() => onOpenWheel()}
+              disabled={busy}
+            >
+              {loading ? LOADING : "Крутить колесо / лотерея"}
+            </button>
+          </>
+        );
+      }
     } else if (phase === "dice_choice") {
       turnButton = (
         <p className="muted turn-hint">Подтвердите выбор кубиков в окне</p>
@@ -118,11 +251,17 @@ export default function QuickMenu({
         );
       }
     } else if (phase === "playing") {
-      turnButton = (
-        <p className="muted turn-hint">
-          Откройте профиль: отзыв и оценка → «Игра пройдена» или дроп
-        </p>
-      );
+      turnButton =
+        ongoingGame?.status === "pending_admin" ? (
+          <p className="muted turn-hint">
+            Игра «{ongoingGame.title}» ждёт назначения админом. Новый ход после
+            прохождения.
+          </p>
+        ) : (
+          <p className="muted turn-hint">
+            Откройте профиль: отзыв и оценка → «Игра пройдена» или дроп
+          </p>
+        );
     }
   }
 
@@ -167,7 +306,7 @@ export default function QuickMenu({
       {isPlayer && currentUser && (
         <div className="turn-panel">
           <p>
-            Вы: <strong>{currentUser.username}</strong>
+            Вы: <strong>{playerName(currentUser)}</strong>
           </p>
           {phase && (
             <p className="muted phase-label">{phaseLabel(phase)}</p>

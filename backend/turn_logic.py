@@ -16,6 +16,7 @@ def require_phase(user: User, *allowed: str) -> str | None:
             "playing": "прохождение игры",
             "reward_items": "награда — колёса предметов",
             "durka": "дурка",
+            "durka_choice": "дурка — выбор направления",
         }
         cur = labels.get(user.turn_phase, user.turn_phase)
         return f"Сейчас этап «{cur}». Действие недоступно."

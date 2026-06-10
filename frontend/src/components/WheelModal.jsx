@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "../api";
-import { animateProgress } from "../wallClock";
 
 const SPIN_MS = 2800;
 const SIZE = 520;
@@ -25,6 +24,7 @@ function normalizeGames(games, wheelItems, itemWheel) {
     return wheelItems.map((i) => ({
       title: i.wheelLabel || `#${i.id} ${i.name}`,
       itemId: i.id,
+      flavor: i.flavor,
       description: i.description,
       polarity: i.polarity,
       durationTurns: i.durationTurns,
@@ -69,18 +69,21 @@ export default function WheelModal({
   games,
   wheelItems,
   itemWheel,
-  blazerd,
+  blazerdGenreLabel,
   lottery,
   canInteract,
   spinCommand,
   hltbItems,
   actionLoading,
   onConfirm,
-  onBlazerdGenre,
   onRequestSpin,
   rewardSpinsRemaining,
   rewardSpinIndex,
   wheelType,
+  turnError,
+  extraWheelSpinsRemaining,
+  voteLabels,
+  onDismiss,
 }) {
   const [rotation, setRotation] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -91,7 +94,9 @@ export default function WheelModal({
   const [done, setDone] = useState(false);
   const [neighborPick, setNeighborPick] = useState(null);
   const [neighborChoiceIndex, setNeighborChoiceIndex] = useState(null);
-  const neighborIsOops = neighborPick?.landedTitle != null;
+  const [shopSelections, setShopSelections] = useState([]);
+  const [alreadyPlayed, setAlreadyPlayed] = useState(false);
+  const shopMode = neighborPick?.mode;
   const [showLabels, setShowLabels] = useState(false);
   const [items, setItems] = useState(() =>
     normalizeGames(games, wheelItems, itemWheel)
@@ -100,7 +105,7 @@ export default function WheelModal({
   const lastSpinKeyRef = useRef(null);
 
   const gamesSig = useMemo(() => gamesSignature(games), [games]);
-  const list = blazerd && !genrePick ? [] : items;
+  const list = items;
   const labelsVisible = showLabels && list.length > 0;
 
   useEffect(() => {
@@ -144,7 +149,6 @@ export default function WheelModal({
     setTip(null);
     setRotation(0);
     setSpinning(false);
-    setGenrePick(null);
     setNeighborPick(null);
     setNeighborChoiceIndex(null);
   }, [sessionId]);
@@ -251,6 +255,7 @@ export default function WheelModal({
     const it = list[idx];
     setTip({
       title: it.title,
+      flavor: it.flavor,
       description: it.description || "—",
       duration: it.durationTurns,
       polarity: it.polarity,
@@ -305,11 +310,12 @@ export default function WheelModal({
         setSelected(null);
         setSelectedItemId(null);
         setNeighborChoiceIndex(null);
-      } else if (spinCommand.oopsPick?.choices?.length) {
-        setNeighborPick(spinCommand.oopsPick);
+      } else if (spinCommand.shopPick?.choices?.length) {
+        setNeighborPick(spinCommand.shopPick);
         setSelected(null);
         setSelectedItemId(null);
         setNeighborChoiceIndex(null);
+        setShopSelections([]);
       } else {
         const pick = active[spinCommand.targetIndex] || active[0];
         setNeighborPick(null);
@@ -317,6 +323,7 @@ export default function WheelModal({
         setSelectedItemId(
           spinCommand.selectedItemId ?? pick?.itemId ?? null
         );
+        setAlreadyPlayed(!!spinCommand.duplicateGame);
       }
       drawWheel(rot, true);
       return;
@@ -324,8 +331,8 @@ export default function WheelModal({
 
     const pickTag = spinCommand.crownPick
       ? "crown"
-      : spinCommand.oopsPick
-        ? "oops"
+      : spinCommand.shopPick
+        ? "shop"
         : "plain";
     const spinKey = `${sessionId}-${spinCommand.targetIndex}-${(spinCommand.wheel || []).length}-${pickTag}`;
     if (lastSpinKeyRef.current === spinKey) return;
@@ -343,44 +350,53 @@ export default function WheelModal({
     setSpinning(true);
     setShowLabels(true);
     setDone(false);
+    setAlreadyPlayed(false);
 
     const n = active.length;
     const slice = 360 / n;
     const targetAngle = 360 - spinCommand.targetIndex * slice - slice / 2;
     const extra = 4 * 360 + targetAngle;
+    const start = performance.now();
 
-    animateProgress(
-      SPIN_MS,
-      (t) => {
-        const ease = 1 - Math.pow(1 - t, 3);
-        const rot = extra * ease;
-        setRotation(rot);
-        drawWheel(rot, true);
-      },
-      () => {
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / SPIN_MS);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const rot = extra * ease;
+      setRotation(rot);
+      drawWheel(rot, true);
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
         if (spinCommand.crownPick?.choices?.length) {
           setNeighborPick(spinCommand.crownPick);
           setSelected(null);
           setSelectedItemId(null);
           setNeighborChoiceIndex(null);
-        } else if (spinCommand.oopsPick?.choices?.length) {
-          setNeighborPick(spinCommand.oopsPick);
+        } else if (spinCommand.shopPick?.choices?.length) {
+          setNeighborPick(spinCommand.shopPick);
           setSelected(null);
           setSelectedItemId(null);
           setNeighborChoiceIndex(null);
+          setShopSelections([]);
         } else {
           const pick = active[spinCommand.targetIndex] || active[0];
           setNeighborPick(null);
-          setSelected(pick?.title || "");
+          const title =
+            spinCommand.selectedItemName ||
+            pick?.title ||
+            "";
+          setSelected(title);
           setSelectedItemId(
             spinCommand.selectedItemId ?? pick?.itemId ?? null
           );
+          setAlreadyPlayed(!!spinCommand.duplicateGame);
         }
         setDone(true);
         setSpinning(false);
       }
-    );
-  }, [spinCommand, sessionId, games, list, drawWheel]);
+    };
+    requestAnimationFrame(tick);
+  }, [spinCommand, sessionId, games, wheelItems, itemWheel, list, drawWheel]);
 
   const busy = !!actionLoading;
   const spinLoading = actionLoading === "spin";
@@ -438,37 +454,6 @@ export default function WheelModal({
     );
   }
 
-  if (blazerd && !genrePick) {
-    return (
-      <div className="overlay overlay-spectate">
-        <div className="modal-square wheel-modal">
-          <p className="spectate-actor">{actorUsername} — Blazerd</p>
-          <h3>Выбор жанра</h3>
-          {canInteract ? (
-            <div className="genre-grid">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => (
-                <button
-                  key={g}
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => {
-                    if (busy) return;
-                    setGenrePick(g);
-                    onBlazerdGenre?.(g);
-                  }}
-                >
-                  Жанр {g}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">Игрок выбирает жанр…</p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   const selectedIdx = Math.max(
     0,
     list.findIndex((g) => g.title === selected)
@@ -477,8 +462,19 @@ export default function WheelModal({
   return (
     <div className="overlay overlay-spectate">
       <div className="modal-square wheel-modal wheel-modal-large">
+        {canInteract && onDismiss && !spinning && !done && (
+          <button
+            type="button"
+            className="wheel-dismiss-btn close"
+            title="Закрыть колесо"
+            onClick={onDismiss}
+          >
+            ×
+          </button>
+        )}
         <p className="spectate-actor">
           {actorUsername}{" "}
+          {blazerdGenreLabel ? `— Blazerd: ${blazerdGenreLabel}` : ""}{" "}
           {spinning
             ? "крутит колесо"
             : done
@@ -493,6 +489,21 @@ export default function WheelModal({
                   ? "— колесо предметов"
                   : "— колесо игр"}
         </p>
+        {turnError && <p className="error wheel-error">{turnError}</p>}
+        {voteLabels?.length > 0 && (
+          <div className="wheel-vote-banners">
+            {voteLabels.map((label) => (
+              <span key={label} className="wheel-vote-banner">
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
+        {itemWheel && Number(extraWheelSpinsRemaining) > 0 && (
+          <p className="wheel-spins-counter">
+            Доп. прокруты колеса: <strong>{extraWheelSpinsRemaining}</strong>
+          </p>
+        )}
         <div className="wheel-assembly">
           <div className="wheel-arrow-fixed" aria-hidden="true" />
           <div className="wheel-spin-layer">
@@ -526,17 +537,20 @@ export default function WheelModal({
         {tip && itemWheel && (
           <div className="inv-tooltip wheel-item-tip">
             <strong>{tip.title}</strong>
-            <p>{tip.description}</p>
+            {tip.flavor && <p className="inv-flavor">{tip.flavor}</p>}
+            <p className="inv-mechanics">{tip.description}</p>
           </div>
         )}
         {done && neighborPick?.choices?.length && (
           <>
             <p className="muted wheel-crown-hint">
-              {neighborIsOops
-                ? "Данный пункт колеса недоступен в вашем регионе. Выберите один из четырёх соседних пунктов (два вверх, два вниз)."
-                : "Корона колесного короля: выберите выпавшую игру или соседнюю"}
+              {shopMode === "chat"
+                ? "По магазинам с чатом: чат голосует между пятью секторами (выпало + 4 соседа)."
+                : shopMode === "leprechaun"
+                  ? "По магазинам с Лепреконом: выберите ровно 2 сектора из пяти."
+                  : "Корона колесного короля: выберите выпавшую игру или соседнюю"}
             </p>
-            {neighborIsOops && neighborPick.landedTitle && (
+            {shopMode && neighborPick.landedTitle && (
               <p className="wheel-result muted">
                 Недоступно: <strong>{neighborPick.landedTitle}</strong>
               </p>
@@ -546,8 +560,26 @@ export default function WheelModal({
                 <button
                   key={c.choiceIndex}
                   type="button"
-                  className={`btn ${neighborChoiceIndex === c.choiceIndex ? "primary" : ""}`}
+                  className={`btn ${
+                    shopMode === "leprechaun"
+                      ? shopSelections.includes(c.choiceIndex)
+                        ? "primary"
+                        : ""
+                      : neighborChoiceIndex === c.choiceIndex
+                        ? "primary"
+                        : ""
+                  }`}
                   onClick={() => {
+                    if (shopMode === "leprechaun") {
+                      setShopSelections((prev) => {
+                        if (prev.includes(c.choiceIndex)) {
+                          return prev.filter((x) => x !== c.choiceIndex);
+                        }
+                        if (prev.length >= 2) return prev;
+                        return [...prev, c.choiceIndex];
+                      });
+                      return;
+                    }
                     setNeighborChoiceIndex(c.choiceIndex);
                     setSelected(c.title);
                     if (itemWheel && c.itemId != null) {
@@ -556,7 +588,10 @@ export default function WheelModal({
                   }}
                 >
                   {c.title}
-                  {!neighborIsOops && c.choiceIndex === 1 ? " (выпало)" : ""}
+                  {!shopMode && c.choiceIndex === 1 ? " (выпало)" : ""}
+                  {shopMode && c.wheelIndex === neighborPick.landedIndex
+                    ? " (выпало)"
+                    : ""}
                 </button>
               ))}
             </div>
@@ -579,16 +614,34 @@ export default function WheelModal({
             {canInteract && (
               <button
                 className="btn primary"
-                disabled={busy || neighborChoiceIndex == null}
+                disabled={
+                  busy ||
+                  (shopMode === "leprechaun"
+                    ? shopSelections.length !== 2
+                    : shopMode === "chat"
+                      ? false
+                      : neighborChoiceIndex == null)
+                }
                 onClick={() => {
-                  if (busy || neighborChoiceIndex == null) return;
+                  if (busy) return;
+                  if (shopMode === "leprechaun" && shopSelections.length !== 2) return;
+                  if (!shopMode && neighborChoiceIndex == null) return;
                   if (itemWheel) {
-                    onConfirm({
-                      wheelType: "item",
-                      selectedItemId,
-                      targetIndex: neighborPick.choices[neighborChoiceIndex]?.wheelIndex,
-                      oopsChoiceIndex: neighborChoiceIndex,
-                    });
+                    if (shopMode) {
+                      onConfirm({
+                        wheelType: wheelType || "item",
+                        targetIndex: spinCommand?.targetIndex,
+                        shopChoiceIndexes:
+                          shopMode === "leprechaun" ? shopSelections : undefined,
+                      });
+                    } else {
+                      onConfirm({
+                        wheelType: wheelType || "item",
+                        selectedItemId:
+                          selectedItemId ?? spinCommand?.selectedItemId,
+                        targetIndex: spinCommand?.targetIndex,
+                      });
+                    }
                   } else {
                     onConfirm({
                       selectedGame: selected,
@@ -598,17 +651,55 @@ export default function WheelModal({
                   }
                 }}
               >
-                {confirmLoading ? LOADING : "Принять"}
+                {confirmLoading
+                  ? LOADING
+                  : shopMode === "chat"
+                    ? "Чат голосует"
+                    : "Принять"}
               </button>
             )}
           </>
         )}
-        {done && selected && !neighborPick?.choices?.length && (
+        {done &&
+          !itemWheel &&
+          alreadyPlayed &&
+          !neighborPick?.choices?.length && (
+          <>
+            <p className="wheel-result wheel-already-played">Уже выпадало</p>
+            {selected && (
+              <p className="muted">
+                {selected}
+              </p>
+            )}
+            {canInteract && (
+              <button
+                className="btn primary"
+                disabled={busy || spinning}
+                onClick={() => {
+                  if (busy || spinning) return;
+                  setDone(false);
+                  setAlreadyPlayed(false);
+                  setSelected(null);
+                  onRequestSpin?.();
+                }}
+              >
+                {spinLoading ? LOADING : "Рерол"}
+              </button>
+            )}
+          </>
+        )}
+        {done &&
+          (selected ||
+            selectedItemId != null ||
+            spinCommand?.selectedItemId != null ||
+            Number.isInteger(spinCommand?.targetIndex)) &&
+          !neighborPick?.choices?.length &&
+          !(alreadyPlayed && !itemWheel) && (
           <>
             <p className="wheel-result">
               Выпало:{" "}
               {itemWheel ? (
-                <span>{selected}</span>
+                <span>{selected || `#${selectedItemId}`}</span>
               ) : (
                 <a
                   href={urlForIndex(selectedIdx)}
@@ -627,9 +718,12 @@ export default function WheelModal({
                   if (busy) return;
                   if (itemWheel) {
                     onConfirm({
-                      wheelType: "item",
-                      selectedItemId,
-                      targetIndex: selectedIdx,
+                      wheelType: wheelType || "item",
+                      selectedItemId:
+                        selectedItemId ?? spinCommand?.selectedItemId,
+                      targetIndex:
+                        spinCommand?.targetIndex ??
+                        (selectedIdx >= 0 ? selectedIdx : 0),
                     });
                   } else {
                     onConfirm({

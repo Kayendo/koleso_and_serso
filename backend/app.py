@@ -72,6 +72,9 @@ def create_app() -> Flask:
 
         seed_users()
         _ensure_default_avatar()
+        from backend.reward_wheels import hydrate_reward_state
+
+        hydrate_reward_state()
 
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
@@ -108,12 +111,76 @@ def _migrate_schema():
     if "last_position" not in cols:
         conn.execute(sa.text("ALTER TABLE users ADD COLUMN last_position INTEGER"))
         conn.commit()
+    cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(users)"))}
+    if "pending_reward_spins" not in cols:
+        conn.execute(
+            sa.text("ALTER TABLE users ADD COLUMN pending_reward_spins INTEGER DEFAULT 0")
+        )
+        conn.commit()
+    cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(users)"))}
+    if "reward_dice_ready" not in cols:
+        conn.execute(
+            sa.text(
+                "ALTER TABLE users ADD COLUMN reward_dice_ready BOOLEAN DEFAULT 0"
+            )
+        )
+        conn.commit()
+    cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(users)"))}
+    if "display_name" not in cols:
+        conn.execute(sa.text("ALTER TABLE users ADD COLUMN display_name VARCHAR(64) DEFAULT ''"))
+        conn.commit()
+        conn.execute(
+            sa.text(
+                "UPDATE users SET display_name = username "
+                "WHERE display_name IS NULL OR display_name = ''"
+            )
+        )
+        conn.commit()
     cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(player_games)"))}
     if "gameplay_tags" not in cols:
         conn.execute(
             sa.text("ALTER TABLE player_games ADD COLUMN gameplay_tags TEXT DEFAULT '[]'")
         )
         conn.commit()
+    cols = {
+        row[1] for row in conn.execute(sa.text("PRAGMA table_info(player_inventory)"))
+    }
+    if "charges_remaining" not in cols:
+        conn.execute(
+            sa.text(
+                "ALTER TABLE player_inventory ADD COLUMN charges_remaining INTEGER"
+            )
+        )
+        conn.commit()
+        _backfill_inventory_charges(conn)
+
+
+def _backfill_inventory_charges(conn) -> None:
+    """Старые записи: quantity часто хранило суммарные заряды."""
+    import sqlalchemy as sa
+
+    from backend.items.inventory import charges_per_unit
+
+    rows = conn.execute(
+        sa.text(
+            "SELECT id, user_id, item_def_id, quantity FROM player_inventory"
+        )
+    ).fetchall()
+    for row_id, _uid, item_def_id, qty in rows:
+        qty = int(qty or 0)
+        if qty <= 0:
+            continue
+        per = charges_per_unit(int(item_def_id))
+        charges = qty
+        items = max(1, (charges + per - 1) // per)
+        conn.execute(
+            sa.text(
+                "UPDATE player_inventory SET quantity = :items, "
+                "charges_remaining = :charges WHERE id = :id"
+            ),
+            {"items": items, "charges": charges, "id": row_id},
+        )
+    conn.commit()
 
 
 def _ensure_default_avatar():

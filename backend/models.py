@@ -15,6 +15,7 @@ class User(UserMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    display_name = db.Column(db.String(64), default="")
     password_hash = db.Column(db.String(256), nullable=False)
     avatar_url = db.Column(db.String(512), default="")
     is_judge = db.Column(db.Boolean, default=False)
@@ -29,6 +30,8 @@ class User(UserMixin, db.Model):
     in_durka = db.Column(db.Boolean, default=False)
     turn_phase = db.Column(db.String(32), default="idle")
     last_position = db.Column(db.Integer, nullable=True)
+    pending_reward_spins = db.Column(db.Integer, default=0)
+    reward_dice_ready = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=utcnow)
 
     games = db.relationship("PlayerGame", back_populates="player", lazy="dynamic")
@@ -39,10 +42,17 @@ class User(UserMixin, db.Model):
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
+    def public_name(self) -> str:
+        dn = (self.display_name or "").strip()
+        return dn or self.username
+
     def to_public_dict(self) -> dict:
-        return {
+        from backend.items.admin_wheel import public_admin_wheel
+
+        d = {
             "id": self.id,
             "username": self.username,
+            "displayName": self.public_name(),
             "avatarUrl": self.avatar_url or "/avatars/default.svg",
             "points": self.points,
             "position": self.position,
@@ -52,10 +62,29 @@ class User(UserMixin, db.Model):
             "laps": self.laps,
             "inDurka": self.in_durka,
             "turnPhase": self.turn_phase,
+            "rewardSpinsPending": int(self.pending_reward_spins or 0),
+            "rewardDiceReady": bool(self.reward_dice_ready),
             "isJudge": self.is_judge,
             "isAdmin": self.is_admin,
             "isPlayer": self.is_player,
         }
+        aw = public_admin_wheel(self.id)
+        if aw:
+            d["adminWheelEffect"] = aw
+        from backend.items.admin_item_grant import public_admin_item_grant
+
+        ag = public_admin_item_grant(self.id)
+        if ag:
+            d["adminItemGrantPending"] = ag
+        from backend.items.wheel_extras import extra_wheel_spins_left
+
+        d["extraWheelSpinsRemaining"] = extra_wheel_spins_left(self.id)
+        from backend.services.game_history import public_ongoing_game
+
+        og = public_ongoing_game(self.id)
+        if og:
+            d["ongoingGame"] = og
+        return d
 
 
 class PlayerGame(db.Model):
@@ -135,6 +164,7 @@ class PlayerInventoryItem(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     item_def_id = db.Column(db.Integer, nullable=False)
     quantity = db.Column(db.Integer, default=1)
+    charges_remaining = db.Column(db.Integer, nullable=True)
     is_trap = db.Column(db.Boolean, default=False)
 
 

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-const ROLL_TICKS = 6;
-const ROLL_MS = 50;
+const ROLL_TICKS = 8;
+const ROLL_INTERVAL_MS = 70;
 
 export default function DiceModal({
   dice,
@@ -11,55 +11,44 @@ export default function DiceModal({
   steps,
   label,
   showEffects = true,
-  onRollComplete,
+  requireAccept = false,
+  onDone,
 }) {
-  const faces = useMemo(() => {
-    const d = rawDice?.length >= 2 ? rawDice : dice?.length >= 2 ? dice : dice;
-    return Array.isArray(d) ? [...d] : [1, 1];
-  }, [rawDice, dice]);
-
-  const facesKey = useMemo(() => faces.join(","), [faces]);
-  const onCompleteRef = useRef(onRollComplete);
-
-  useEffect(() => {
-    onCompleteRef.current = onRollComplete;
-  }, [onRollComplete]);
-
+  const faces =
+    rawDice?.length >= 2 ? rawDice : dice?.length >= 2 ? dice : dice;
   const [shown, setShown] = useState([1, 1]);
   const [phase, setPhase] = useState("rolling");
 
+  const faceSum =
+    faces?.length === 1 ? shown[0] : shown[0] + (shown[1] ?? 0);
+  const totalSteps = steps ?? faceSum;
+  const stepsChanged = totalSteps !== faceSum;
+  const hasModifiers = showEffects && (factors.length > 0 || stepsChanged);
+
   useEffect(() => {
-    if (!facesKey) return undefined;
+    if (!faces?.length) return undefined;
     setPhase("rolling");
     let step = 0;
     const t = setInterval(() => {
       const r = () => 1 + Math.floor(Math.random() * 6);
       setShown(faces.length === 1 ? [r()] : [r(), r()]);
       step += 1;
-      if (step >= ROLL_TICKS) {
+      if (step > ROLL_TICKS) {
         clearInterval(t);
         setShown(faces);
         setPhase("result");
-        onCompleteRef.current?.();
       }
-    }, ROLL_MS);
+    }, ROLL_INTERVAL_MS);
     return () => clearInterval(t);
-  }, [facesKey, faces.length]);
+  }, [faces]);
 
   if (!dice?.length) return null;
-
-  const faceSum =
-    faces.length === 1 ? shown[0] : shown[0] + (shown[1] ?? 0);
-  const totalSteps = steps ?? faceSum;
-  const stepsChanged = totalSteps !== faceSum;
-  const hasModifiers = showEffects && (factors.length > 0 || stepsChanged);
 
   return (
     <div className="overlay overlay-spectate">
       <div className="modal-square dice-modal">
         <p className="spectate-actor">
-          {actorUsername}{" "}
-          {phase === "rolling" ? "бросает кубики" : "бросил кубики"}
+          {actorUsername} {phase === "rolling" ? "бросает кубики" : "бросил кубики"}
         </p>
         <div className="dice-row">
           {faces.length === 1 ? (
@@ -84,9 +73,7 @@ export default function DiceModal({
                 <p className="dice-effects-title">Что изменило бросок</p>
                 <ul className="dice-effects-list">
                   {factors.length > 0 ? (
-                    factors.map((f, i) => (
-                      <li key={i}>{f}</li>
-                    ))
+                    factors.map((f, i) => <li key={i}>{f}</li>)
                   ) : (
                     <li className="muted">Сумма изменена модификаторами</li>
                   )}
@@ -99,6 +86,11 @@ export default function DiceModal({
         )}
         {phase === "rolling" && (
           <p className="muted dice-rolling-hint">Бросок…</p>
+        )}
+        {phase === "result" && requireAccept && (
+          <button type="button" className="btn primary dice-accept-btn" onClick={() => onDone?.()}>
+            Принять
+          </button>
         )}
       </div>
     </div>

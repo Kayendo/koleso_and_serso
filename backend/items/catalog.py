@@ -20,6 +20,7 @@ class ItemDef:
     instant: bool
     duration_turns: int
     name: str
+    flavor: str
     description: str
     effect: str
 
@@ -36,6 +37,7 @@ class ItemDef:
             "instant": self.instant,
             "durationTurns": self.duration_turns,
             "name": self.name,
+            "flavor": self.flavor,
             "description": self.description,
             "effect": self.effect,
             "wheelLabel": self.wheel_label,
@@ -54,6 +56,14 @@ def _parse_row(parts: list[str]) -> ItemDef | None:
         iid = int(parts[0].strip())
     except ValueError:
         return None
+    if len(parts) >= 9:
+        flavor = (parts[6] or "").strip()
+        description = (parts[7] or "").strip()
+        effect = (parts[8] if len(parts) > 8 else "").strip()
+    else:
+        flavor = ""
+        description = (parts[6] or "").strip()
+        effect = (parts[7] if len(parts) > 7 else "").strip()
     return ItemDef(
         id=iid,
         kind=(parts[1] or "item").strip().lower(),
@@ -61,13 +71,16 @@ def _parse_row(parts: list[str]) -> ItemDef | None:
         instant=_parse_bool(parts[3]),
         duration_turns=int(parts[4].strip() or "0"),
         name=(parts[5] or f"Предмет {iid}").strip(),
-        description=(parts[6] or "").strip(),
-        effect=(parts[7] if len(parts) > 7 else "").strip(),
+        flavor=flavor,
+        description=description,
+        effect=effect,
     )
 
 
 def load_catalog(force: bool = False) -> dict[int, ItemDef]:
     global _catalog_cache
+    if force:
+        _catalog_cache = None
     if _catalog_cache is not None and not force:
         return _catalog_cache
 

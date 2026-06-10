@@ -1,14 +1,24 @@
-import { useMemo, useState } from "react";
-import { apiPost } from "../api";
+import { useEffect, useState } from "react";
+import { apiGet, apiPost } from "../api";
+import { fetchGenres } from "../genres";
+import { playerName } from "../playerName";
+import GenrePicker from "./GenrePicker";
 
 const LOADING = "Загрузка...";
-const CLOVER_TYPES = new Set(["trallalero", "lottery", "question"]);
+const GENRE_PICK_ITEMS = new Set([15]);
+const LAW_ITEMS = new Set([40, 41]);
+const WHEEL_READY_ONLY = new Set([15, 24, 25, 40, 41]);
 
-function ItemIcon({ itemId, title, selected }) {
+function ItemIcon({ itemId, title, selected, quantity, charges }) {
+  const showUses =
+    charges != null &&
+    quantity != null &&
+    (charges > quantity || (quantity === 1 && charges > 1));
+  const tip = showUses ? `${title} · осталось ${charges}` : title;
   return (
     <div
       className={`inv-icon ${selected ? "inv-icon-selected" : ""}`}
-      title={title}
+      title={tip}
     >
       {itemId}
     </div>
@@ -46,17 +56,15 @@ function StatusRow({ entries, polarity }) {
       {selected && (
         <div className="inv-detail-panel inv-detail-compact">
           <strong>{selected.name}</strong>
-          <p>{selected.description || "—"}</p>
-          {selected.gameplayHint && (
+          {selected.flavor && (
+            <p className="inv-flavor">{selected.flavor}</p>
+          )}
+          {selected.gameplayHint && selected.gameplayHint !== selected.name && (
             <p className="inv-gameplay-hint">{selected.gameplayHint}</p>
           )}
-          <p className="muted">
-            {selected.durationLabel
-              ? `Срок: ${selected.durationLabel}`
-              : `Осталось ходов: ${
-                  selected.turnsRemaining > 0 ? selected.turnsRemaining : "∞"
-                }`}
-          </p>
+          {selected.durationLabel && (
+            <p className="muted">{selected.durationLabel}</p>
+          )}
         </div>
       )}
     </div>
@@ -69,25 +77,41 @@ export default function InventoryModal({
   cells,
   playerPosition,
   currentUserId,
+  turnPhase,
   isOwner,
   onClose,
   onRefresh,
+  onUserSync,
 }) {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
   const [targetName, setTargetName] = useState("");
   const [partnerName, setPartnerName] = useState("");
   const [repairTargetId, setRepairTargetId] = useState("");
+  const [chocolateGenreId, setChocolateGenreId] = useState("");
+  const [genres, setGenres] = useState([]);
+  const [explosivesAlert, setExplosivesAlert] = useState(null);
 
-  const onCloverCell = useMemo(() => {
-    const cell = cells?.find((c) => c.id === playerPosition);
-    return cell && CLOVER_TYPES.has(cell.type);
-  }, [cells, playerPosition]);
+  useEffect(() => {
+    fetchGenres(apiGet).then(setGenres);
+  }, []);
 
   const postUse = async (body) => {
-    await apiPost("/inventory/use", body);
+    const data = await apiPost("/inventory/use", body);
+    if (data.explosivesRoll) {
+      const title =
+        data.explosivesMessage ||
+        (data.explosivesRoll === "survived" ? "ВЫ УЦЕЛЕЛИ" : "ВЫ ВЗОРВАЛИСЬ");
+      const detail =
+        data.explosivesRoll === "survived"
+          ? "Эффект предмета сработал. Заряд предмета и взрывчатки списаны."
+          : "Эффект предмета не сработал. Заряд предмета и взрывчатки всё равно списаны.";
+      setExplosivesAlert({ title, detail, ok: data.explosivesRoll === "survived" });
+    }
+    if (data.user) onUserSync?.(data.user);
     await onRefresh?.();
     setSelected(null);
+    return data;
   };
 
   const useSelected = async (extra = {}) => {
@@ -99,7 +123,7 @@ export default function InventoryModal({
         ? (players || []).find(
             (p) =>
               p.id !== currentUserId &&
-              p.username.toLowerCase() === partnerName.trim().toLowerCase()
+              playerName(p).toLowerCase() === partnerName.trim().toLowerCase()
           )
         : null;
 
@@ -122,6 +146,16 @@ export default function InventoryModal({
         alert("Выберите предмет для ремонта (не Шоколад)");
         return;
       }
+      if (WHEEL_READY_ONLY.has(item.itemId) && turnPhase !== "wheel_ready") {
+        alert(
+          "Используйте после броска кубика, перед открытием колеса"
+        );
+        return;
+      }
+      if (GENRE_PICK_ITEMS.has(item.itemId) && !chocolateGenreId) {
+        alert("Выберите категорию игр");
+        return;
+      }
       await postUse({
         itemId: item.itemId,
         targetUsername: targetName.trim() || undefined,
@@ -129,6 +163,9 @@ export default function InventoryModal({
         partnerUserId: item.itemId === 11 ? partner.id : undefined,
         targetItemId:
           item.itemId === 9 ? parseInt(repairTargetId, 10) : undefined,
+        genreId: GENRE_PICK_ITEMS.has(item.itemId)
+          ? parseInt(chocolateGenreId, 10)
+          : undefined,
         mode: extra.mode,
       });
       setTargetName("");
@@ -140,14 +177,33 @@ export default function InventoryModal({
   };
 
   const selectItem = (item) => {
+    setChocolateGenreId("");
     setSelected((prev) =>
       prev?.itemId === item.itemId && prev?.isTrap === item.isTrap ? null : item
     );
   };
 
-  const isClover = selected?.itemId === 13;
-
   return (
+    <>
+      {explosivesAlert && (
+        <div className="overlay overlay-spectate explosives-overlay">
+          <div
+            className={`modal-square explosives-modal ${
+              explosivesAlert.ok ? "explosives-survived" : "explosives-boom"
+            }`}
+          >
+            <h2>{explosivesAlert.title}</h2>
+            <p>{explosivesAlert.detail}</p>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setExplosivesAlert(null)}
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
+      )}
     <div className="overlay" onClick={onClose}>
       <div
         className="modal-panel wide inventory-panel"
@@ -161,19 +217,19 @@ export default function InventoryModal({
         </header>
         <div className="modal-body inventory-body">
           <section className="inv-section">
-            <h3>Баффы (влияют на прохождение)</h3>
+            <h3>Баффы</h3>
             <StatusRow entries={inventory?.buffs || []} polarity="buff" />
           </section>
 
           <section className="inv-section">
-            <h3>Дебаффы (влияют на прохождение)</h3>
+            <h3>Дебаффы</h3>
             <StatusRow entries={inventory?.debuffs || []} polarity="debuff" />
           </section>
 
           <section className="inv-section">
             <h3>Предметы</h3>
             <p className="muted inv-hint">
-              Нажмите на предмет, затем «Использовать» в панели ниже.
+              Выберите предмет и нажмите «Использовать».
             </p>
             <div className="inv-grid">
               {(inventory?.items || []).length ? (
@@ -192,6 +248,8 @@ export default function InventoryModal({
                         itemId={it.itemId}
                         title={it.name}
                         selected={isSel}
+                        quantity={it.quantity}
+                        charges={it.charges}
                       />
                       {it.quantity > 1 && (
                         <span className="inv-qty">×{it.quantity}</span>
@@ -211,10 +269,18 @@ export default function InventoryModal({
                 {selected.name}
                 {selected.isTrap ? " (ловушка)" : ""}
               </h4>
-              <p>{selected.description || "—"}</p>
-              <p className="muted">
-                Зарядов: {selected.charges ?? selected.quantity ?? 1}
-              </p>
+              {selected.flavor && (
+                <p className="inv-flavor">{selected.flavor}</p>
+              )}
+              <p className="inv-mechanics">{selected.description || "—"}</p>
+              <p className="muted">В наличии: {selected.quantity ?? 1}</p>
+              {selected.charges != null &&
+                (selected.chargesPerUnit > 1 ||
+                  selected.charges !== (selected.quantity ?? 1)) && (
+                  <p className="muted">
+                    Осталось использований: {selected.charges}
+                  </p>
+                )}
 
               {isOwner && selected.itemId === 9 && (
                 <>
@@ -240,7 +306,41 @@ export default function InventoryModal({
                 </>
               )}
 
-              {isOwner && !isClover && selected.itemId !== 11 && (
+              {isOwner && selected && GENRE_PICK_ITEMS.has(selected.itemId) && (
+                <>
+                  {turnPhase !== "wheel_ready" ? (
+                    <p className="muted inv-hint">
+                      Доступно только после броска кубика, перед колесом игр.
+                    </p>
+                  ) : (
+                    <>
+                      <label className="field-label">Жанр</label>
+                      <GenrePicker
+                        genres={genres}
+                        value={chocolateGenreId}
+                        onChange={setChocolateGenreId}
+                        disabled={busy}
+                        layout="grid"
+                      />
+                    </>
+                  )}
+                </>
+              )}
+
+              {isOwner && selected && LAW_ITEMS.has(selected.itemId) && (
+                <p className="muted inv-hint">
+                  После использования выберите категорию слева в панели хода и
+                  роллите игру.
+                </p>
+              )}
+
+              {isOwner && selected && [24, 25].includes(selected.itemId) && (
+                <p className="muted inv-hint">
+                  После использования откройте колесо приколов на этой клетке.
+                </p>
+              )}
+
+              {isOwner && selected.itemId !== 11 && (
                 <>
                   {selected.isTrap && (
                     <>
@@ -259,9 +359,9 @@ export default function InventoryModal({
                               key={p.id}
                               type="button"
                               className="btn"
-                              onClick={() => setTargetName(p.username)}
+                              onClick={() => setTargetName(playerName(p))}
                             >
-                              {p.username}
+                              {playerName(p)}
                             </button>
                           ))}
                       </div>
@@ -304,9 +404,9 @@ export default function InventoryModal({
                           key={p.id}
                           type="button"
                           className="btn"
-                          onClick={() => setPartnerName(p.username)}
+                          onClick={() => setPartnerName(playerName(p))}
                         >
-                          {p.username}
+                          {playerName(p)}
                         </button>
                       ))}
                   </div>
@@ -330,54 +430,12 @@ export default function InventoryModal({
                 </>
               )}
 
-              {isOwner && isClover && (
-                <div className="inv-clover-actions">
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => useSelected({ mode: "block_trap" })}
-                  >
-                    Отбить ловушку
-                  </button>
-                  {onCloverCell ? (
-                    <>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => useSelected({ mode: "cell_bonus" })}
-                      >
-                        +2 очка (Траллалеро / Лотерея / ?)
-                      </button>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={busy}
-                        onClick={() => useSelected({ mode: "cell_easy" })}
-                      >
-                        Лёгкая сложность
-                      </button>
-                    </>
-                  ) : (
-                    <p className="muted">
-                      Бонусы клетки — только на Траллалеро, Лотерее или «?»
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setSelected(null)}
-                  >
-                    Снять выбор
-                  </button>
-                </div>
-              )}
-            </section>
+                          </section>
           )}
 
         </div>
       </div>
     </div>
+    </>
   );
 }

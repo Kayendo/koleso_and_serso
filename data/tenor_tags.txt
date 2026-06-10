@@ -1,0 +1,12 @@
+# Теги для поиска GIF на Tenor (один тег на строку).
+# Можно переопределить через .env: TENOR_SEARCH_TAGS=meme,funny,gaming
+meme
+funny meme
+reaction meme
+gaming meme
+absurd meme
+viral meme
+lol meme
+dank meme
+anime meme
+movie meme

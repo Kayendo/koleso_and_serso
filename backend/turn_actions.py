@@ -18,23 +18,14 @@ from backend.services.turn_service import (
 from backend.turn_logic import require_phase
 
 
-def _is_oops_wheel_item(item: dict) -> bool:
-    try:
-        if int(item.get("id") or 0) == 32:
-            return True
-    except (TypeError, ValueError):
-        pass
-    effect = str(item.get("effect") or "")
-    return effect.split(":")[0].strip() == "oops_neighbor"
-
-
-_pending_wheel: dict[int, list[str]] = {}
-_pending_item_wheel: dict[int, list[dict]] = {}
-_pending_dice_choice: dict[int, dict] = {}
-
-STEP_DELAY_SEC = 0.65
-_pending_crown_pick: dict[int, dict] = {}
-_pending_oops_pick: dict[int, dict] = {}
+from backend.pending_wheels import (
+    pending_crown_pick as _pending_crown_pick,
+    pending_dice_choice as _pending_dice_choice,
+    pending_item_wheel as _pending_item_wheel,
+    pending_shop_pick as _pending_shop_pick,
+    pending_spin as _pending_spin,
+    pending_wheel as _pending_wheel,
+)
 
 
 def _socketio():
@@ -45,8 +36,23 @@ def _emit(event: str, payload: dict) -> None:
     _socketio().emit(event, payload, room="lobby", namespace="/")
 
 
+def _wheel_ui_meta(user: User) -> dict:
+    from backend.items.admin_wheel import admin_wheel_vote_labels, get_active_admin_wheel
+    from backend.items.gameplay import collect_vote_banners
+    from backend.items.wheel_extras import extra_wheel_spins_left
+
+    vote_labels = collect_vote_banners(user.id)
+    admin_labels = admin_wheel_vote_labels(user.id)
+    merged = admin_labels + [v for v in vote_labels if v not in admin_labels]
+    return {
+        "extraWheelSpinsRemaining": extra_wheel_spins_left(user.id),
+        "voteLabels": merged,
+        "adminWheelEffect": get_active_admin_wheel(user.id),
+    }
+
+
 def _user_payload(user: User, **extra) -> dict:
-    return {"username": user.username, "userId": user.id, **extra}
+    return {"username": user.username, "displayName": user.public_name(), "userId": user.id, **extra}
 
 
 def _preload_wheel_hltb(user_id: int, titles: list[str], app) -> None:
@@ -89,6 +95,8 @@ def _wheel_games_for_cell(cell_id: int, genre_id: int | None = None) -> tuple[li
     if genre_id:
         src["genreId"] = genre_id
     wheel: list[str] = []
+    if src.get("durkaCell"):
+        return [], src
     if src.get("itemWheel"):
         return [], src
     if src.get("lottery"):
@@ -107,6 +115,11 @@ def _wheel_games_for_cell(cell_id: int, genre_id: int | None = None) -> tuple[li
 
 
 def roll_dice_for_user(user: User, options: dict | None = None) -> dict | tuple[dict, int]:
+    from backend.services.game_history import block_new_turn_if_in_progress
+
+    in_progress = block_new_turn_if_in_progress(user)
+    if in_progress:
+        return {"error": in_progress}, 400
     err = require_phase(user, "idle")
     if err:
         return {"error": err}, 400
@@ -251,7 +264,7 @@ def reveal_trinity_dice_for_user(user: User) -> dict | tuple[dict, int]:
 def _finish_dice_roll(
     user: User, d1: int, d2: int, options: dict | None = None
 ) -> dict:
-    from backend.items.modifiers import apply_dice_roll, build_move_path
+    from backend.items.modifiers import apply_dice_roll
 
     options = options or {}
     d1, d2, steps, label, move_meta, factors = apply_dice_roll(
@@ -271,80 +284,65 @@ def _finish_dice_roll(
         "factors": factors,
         "user": user.to_public_dict(),
     }
-    backward = bool(move_meta.get("backward"))
-    path, new_pos, passed = build_move_path(
-        user.position, steps, backward=backward
-    )
-    step_ms = int(STEP_DELAY_SEC * 1000)
-    from_pos = user.position
-    avatar = user.avatar_url or "/avatars/default.png"
-
-    payload["path"] = path
-    payload["moveNewPosition"] = new_pos
-    payload["stepMs"] = step_ms
-    payload["avatarUrl"] = avatar
-
     _emit("dice_rolled", payload)
-
-    if path:
-        _emit(
-            "token_move_path",
-            {
-                **_user_payload(user),
-                "fromPosition": from_pos,
-                "path": path,
-                "stepMs": step_ms,
-                "avatarUrl": avatar,
-            },
-        )
-
-    payload["user"] = user.to_public_dict()
-
     _socketio().start_background_task(
-        _commit_move_after_anim,
+        _animate_and_finish,
         user.id,
-        path,
-        new_pos,
-        passed,
+        steps,
         label,
         move_meta,
         factors,
         current_app._get_current_object(),
     )
+    payload["user"] = user.to_public_dict()
     return payload
 
 
-def _commit_move_after_anim(
+STEP_DELAY_SEC = 0.55
+
+
+def _animate_and_finish(
     user_id: int,
-    path: list[int],
-    new_pos: int,
-    passed: bool,
+    steps: int,
     label: str,
     move_meta: dict,
     factors: list,
     app,
 ) -> None:
-    import time
-
     from backend.items.inventory import log_turn
-    from backend.items.modifiers import tick_turn_modifiers
+    from backend.items.modifiers import build_move_path, tick_turn_modifiers
 
-    anim_sec = len(path) * STEP_DELAY_SEC + 0.12 if path else 0.05
-    time.sleep(anim_sec)
+    step_delay = STEP_DELAY_SEC
+    backward = bool(move_meta.get("backward"))
+
     with app.app_context():
         user = db.session.get(User, user_id)
         if not user or user.turn_phase != "rolling":
             return
 
-        backward = bool(move_meta.get("backward"))
-
-        bonus = (
-            apply_start_bonus(user, passed)
-            if not user.in_durka and not backward
-            else 0
+        path, new_pos, passed = build_move_path(
+            user.position, steps, backward=backward
         )
+
+        _emit(
+            "token_move_path",
+            {
+                **_user_payload(user),
+                "fromPosition": user.position,
+                "path": path,
+                "stepMs": int(step_delay * 1000),
+                "avatarUrl": user.avatar_url or "/avatars/default.png",
+            },
+        )
+
+        bonus = apply_start_bonus(user, passed) if not user.in_durka and not backward else 0
         user.position = new_pos
-        user.turn_phase = "wheel_ready"
+        if new_pos == DURKA_CELL_ID and not user.in_durka:
+            user.turn_phase = "durka_choice"
+        elif new_pos == START_CELL_ID:
+            user.turn_phase = "idle"
+        else:
+            user.turn_phase = "wheel_ready"
         db.session.commit()
 
         tick_notes = tick_turn_modifiers(user.id)
@@ -382,29 +380,120 @@ def durka_roll_for_user(user: User) -> dict | tuple[dict, int]:
     err = require_phase(user, "durka")
     if err:
         return {"error": err}, 400
-    if not user.in_durka and user.position != DURKA_CELL_ID:
-        return {"error": "Вы не в дурке"}, 400
+    if not user.in_durka:
+        return {"error": "Ролл в дурке доступен только после дропа"}, 400
+
+    from backend.board import GENRE_LABELS
 
     gid = game_lists.blazerd_genre_roll()
-    user.turn_phase = "wheel_ready"
+    wheel = game_lists.wheel_games(gid, 12)
+    if not wheel:
+        return {"error": f"Нет игр для жанра {gid}"}, 400
+
+    user.turn_phase = "wheel"
+    _pending_wheel[user.id] = wheel
     db.session.commit()
 
-    _, src = _wheel_games_for_cell(DURKA_CELL_ID, gid)
-    src["genreId"] = gid
-    src["durka"] = True
+    src = {
+        "cellId": DURKA_CELL_ID,
+        "cellName": "Дурка",
+        "cellType": "durka",
+        "genreId": gid,
+        "blazerdGenre": gid,
+        "blazerdGenreLabel": GENRE_LABELS.get(gid, f"Жанр {gid}"),
+        "durka": True,
+        "durkaNoPoints": True,
+    }
+    payload = {
+        **_user_payload(user),
+        "wheel": wheel,
+        "wheelType": "game",
+        "source": src,
+        "cellName": "Дурка",
+        "blazerdGenreLabel": src["blazerdGenreLabel"],
+        "user": user.to_public_dict(),
+    }
+    _emit("wheel_opened", payload)
+    return payload
+
+
+def durka_step_for_user(user: User, direction: str) -> dict | tuple[dict, int]:
+    """На клетке «Дурка» без дропа: шаг вперёд или назад → колесо целевой клетки."""
+    err = require_phase(user, "durka_choice")
+    if err:
+        return {"error": err}, 400
+    if user.position != DURKA_CELL_ID:
+        return {"error": "Вы не на клетке «Дурка»"}, 400
+
+    direction = str(direction or "").strip().lower()
+    if direction in ("forward", "fwd", "вперёд", "вперед", "+1", "1"):
+        new_pos = (user.position + 1) % BOARD_SIZE
+        dir_label = "вперёд"
+    elif direction in ("backward", "back", "назад", "-1"):
+        new_pos = (user.position - 1) % BOARD_SIZE
+        dir_label = "назад"
+    else:
+        return {"error": "Укажите direction: forward или backward"}, 400
+
+    from backend.items.inventory import log_turn
+
+    user.position = new_pos
+    if new_pos == START_CELL_ID:
+        user.turn_phase = "idle"
+    else:
+        user.turn_phase = "wheel_ready"
+    db.session.commit()
+
+    cell = BOARD_BY_ID[new_pos]
+    _, src = _wheel_games_for_cell(new_pos)
+    log_turn(
+        user.id,
+        summary=f"Дурка: шаг {dir_label} → {cell.name}",
+        factors=[f"Клетка «Дурка»: выбран шаг {dir_label}"],
+        cell_name=cell.name,
+    )
 
     payload = {
         **_user_payload(user),
-        "position": user.position,
+        "position": new_pos,
         "passedStartBonus": 0,
-        "diceLabel": "дурка",
+        "diceLabel": f"дурка-{dir_label}",
         "user": user.to_public_dict(),
-        "cell": {"id": DURKA_CELL_ID, "name": "Дурка", "type": "durka"},
+        "cell": {"id": cell.id, "name": cell.name, "type": cell.cell_type},
         "source": src,
+        "durkaStep": direction,
     }
     _emit("move_finished", payload)
+
+    if user.turn_phase == "wheel_ready":
+        opened = open_wheel_for_user(user)
+        if isinstance(opened, tuple):
+            return opened
+        return opened
     payload["user"] = user.to_public_dict()
     return payload
+
+
+def _apply_item_pick_to_recovery_payload(payload: dict, user_id: int) -> None:
+    """Восстановить выбор магазина на колесе предметов."""
+    shop = _pending_shop_pick.get(user_id)
+    if shop:
+        items = payload.get("wheelItems") or _pending_item_wheel.get(user_id, [])
+        landed = shop.get("landedIndex")
+        landed_item = (
+            items[landed] if landed is not None and items and 0 <= landed < len(items) else {}
+        )
+        payload["shopPick"] = {
+            "pickKind": "shop",
+            "mode": shop.get("mode"),
+            "landedIndex": landed,
+            "landedTitle": landed_item.get("name") if landed_item else None,
+            "choices": shop.get("choices") or [],
+            "pickCount": 1 if shop.get("mode") == "chat" else 2,
+        }
+        if landed is not None:
+            payload["targetIndex"] = landed
+        payload["wheelType"] = "item"
 
 
 def _recovery_wheel_payload(user: User, src: dict) -> dict | None:
@@ -412,21 +501,41 @@ def _recovery_wheel_payload(user: User, src: dict) -> dict | None:
     if user.turn_phase != "wheel":
         return None
     cell_name = BOARD_BY_ID[user.position].name
-    if src.get("itemWheel"):
-        items = _pending_item_wheel.get(user.id, [])
-        if not items:
-            return None
-        wheel = [i.get("wheelLabel") or i.get("name") for i in items]
-        return {
+
+    from backend.reward_wheels import recovery_reward_wheel_payload
+
+    reward_rec = recovery_reward_wheel_payload(user)
+    if reward_rec:
+        return reward_rec
+
+    spin = _pending_spin.get(user.id, {})
+    shop_pending = _pending_shop_pick.get(user.id)
+    items = _pending_item_wheel.get(user.id, [])
+
+    is_item_wheel = bool(
+        src.get("itemWheel")
+        or items
+        or shop_pending
+        or spin.get("wheelType") == "item"
+    )
+
+    if is_item_wheel and items:
+        item_src = {**src, "itemWheel": True}
+        payload = {
             **_user_payload(user),
-            "wheel": wheel,
+            "wheel": [i.get("wheelLabel") or i.get("name") for i in items],
             "wheelType": "item",
             "wheelItems": items,
-            "source": src,
+            "source": item_src,
             "cellName": cell_name,
             "recovered": True,
             "user": user.to_public_dict(),
+            **_wheel_ui_meta(user),
         }
+        _apply_item_pick_to_recovery_payload(payload, user.id)
+        _apply_pending_spin_to_payload(user.id, payload)
+        return payload
+
     wheel = _pending_wheel.get(user.id, [])
     if not wheel and not src.get("lottery") and not src.get("needsGenrePick"):
         wheel, _ = _wheel_games_for_cell(user.position)
@@ -449,27 +558,50 @@ def _recovery_wheel_payload(user: User, src: dict) -> dict | None:
             "choices": crown_pending.get("choices") or [],
         }
         payload["targetIndex"] = crown_pending.get("landedIndex")
-    oops_pending = _pending_oops_pick.get(user.id)
-    if oops_pending:
-        items = oops_pending.get("items") or []
-        landed = oops_pending.get("landedIndex")
-        landed_item = items[landed] if landed is not None and 0 <= landed < len(items) else {}
-        payload["oopsPick"] = {
-            "landedIndex": landed,
-            "landedTitle": landed_item.get("name"),
-            "choices": oops_pending.get("choices") or [],
-        }
-        payload["targetIndex"] = landed
-        payload["wheelType"] = "item"
-        payload["wheelItems"] = items
-        payload["wheel"] = [
-            i.get("wheelLabel") or i.get("name") for i in items
-        ]
+    _apply_pending_spin_to_payload(user.id, payload)
     return payload
 
 
+def _apply_pending_spin_to_payload(user_id: int, payload: dict) -> None:
+    spin = _pending_spin.get(user_id)
+    if not spin:
+        return
+    payload["targetIndex"] = spin.get("targetIndex")
+    if spin.get("selectedItemId") is not None:
+        payload["selectedItemId"] = spin["selectedItemId"]
+    if spin.get("selectedItemName"):
+        payload["selectedItemName"] = spin["selectedItemName"]
+    if spin.get("selectedGame"):
+        payload["selectedGame"] = spin["selectedGame"]
+    if spin.get("shopPick"):
+        payload["shopPick"] = spin["shopPick"]
+    if spin.get("crownPick"):
+        payload["crownPick"] = spin["crownPick"]
+    if spin.get("wheelType"):
+        payload["wheelType"] = spin["wheelType"]
+    if spin.get("duplicateGame"):
+        payload["duplicateGame"] = spin["duplicateGame"]
+
+
 def open_wheel_for_user(user: User, genre_id: int | None = None) -> dict | tuple[dict, int]:
-    wheel, src = _wheel_games_for_cell(user.position, genre_id)
+    from backend.pending_wheels import consume_chocolate_genre
+
+    choc_genre = consume_chocolate_genre(user.id)
+    if choc_genre is not None:
+        from backend.board import GENRE_LABELS
+
+        wheel = game_lists.wheel_games(choc_genre, 12)
+        src = cell_game_source(user.position)
+        src = {
+            **src,
+            "genreId": choc_genre,
+            "chocolateOverride": True,
+            "blazerdGenreLabel": GENRE_LABELS.get(choc_genre, f"Жанр {choc_genre}"),
+        }
+        if not wheel:
+            return {"error": f"Нет игр для жанра {choc_genre}"}, 400
+    else:
+        wheel, src = _wheel_games_for_cell(user.position, genre_id)
     recovered = _recovery_wheel_payload(user, src)
     if recovered:
         return recovered
@@ -477,6 +609,59 @@ def open_wheel_for_user(user: User, genre_id: int | None = None) -> dict | tuple
     err = require_phase(user, "wheel_ready")
     if err:
         return {"error": err}, 400
+
+    if src.get("startReroll") or user.position == START_CELL_ID:
+        user.turn_phase = "idle"
+        db.session.commit()
+        return {"error": "На старте нет колеса — бросьте кубик ещё раз"}, 400
+
+    if src.get("durkaCell") and user.turn_phase == "durka_choice":
+        return {"error": "Сначала выберите шаг вперёд или назад"}, 400
+
+    from backend.items.admin_wheel import (
+        admin_wheel_genre_payload,
+        admin_wheel_open,
+        get_active_admin_wheel,
+    )
+
+    admin_fx = get_active_admin_wheel(user.id)
+    if admin_fx:
+        if genre_id is None and admin_fx.get("genreId") is not None:
+            genre_id = int(admin_fx["genreId"])
+        if genre_id is None:
+            return admin_wheel_genre_payload(user)
+        gid = int(genre_id)
+        if admin_fx.get("genreId") != gid:
+            from backend.board import GENRE_LABELS
+            from backend.pending_wheels import set_admin_wheel
+
+            set_admin_wheel(
+                user.id,
+                {
+                    **admin_fx,
+                    "genreId": gid,
+                    "genreLabel": GENRE_LABELS.get(gid, f"Жанр {gid}"),
+                },
+            )
+        wheel, src = admin_wheel_open(user, gid)
+        if not wheel:
+            return {"error": f"Нет игр для жанра {genre_id}"}, 400
+        user.turn_phase = "wheel"
+        _pending_wheel[user.id] = wheel
+        db.session.commit()
+        payload = {
+            **_user_payload(user),
+            "wheel": wheel,
+            "wheelType": "game",
+            "source": src,
+            "cellName": BOARD_BY_ID[user.position].name,
+            "blazerdGenreLabel": src.get("blazerdGenreLabel"),
+            "user": user.to_public_dict(),
+            **_wheel_ui_meta(user),
+        }
+        _emit("wheel_opened", payload)
+        return payload
+
     if src.get("itemWheel"):
         from backend.items.wheel import pick_wheel_items
 
@@ -493,23 +678,55 @@ def open_wheel_for_user(user: User, genre_id: int | None = None) -> dict | tuple
             "source": src,
             "cellName": BOARD_BY_ID[user.position].name,
             "user": user.to_public_dict(),
+            **_wheel_ui_meta(user),
         }
         _emit("wheel_opened", payload)
         payload["user"] = user.to_public_dict()
         return payload
 
-    if src.get("needsGenrePick") and not genre_id:
+    if src.get("needsGenrePick"):
+        from backend.board import GENRE_LABELS, GENRE_SHORT_LABELS
+
+        if genre_id is None:
+            return {
+                **_user_payload(user),
+                "needsGenrePick": True,
+                "source": src,
+                "cellName": BOARD_BY_ID[user.position].name,
+                "genres": [
+                    {
+                        "id": gid,
+                        "label": GENRE_LABELS[gid],
+                        "shortLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+                        "buttonLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+                    }
+                    for gid in sorted(GENRE_LABELS)
+                ],
+                "user": user.to_public_dict(),
+            }
+        src = {
+            **src,
+            "genreId": int(genre_id),
+            "blazerdGenre": int(genre_id),
+            "needsGenrePick": False,
+            "blazerdGenreLabel": GENRE_LABELS.get(int(genre_id), f"Жанр {genre_id}"),
+        }
+        wheel = game_lists.wheel_games(int(genre_id), 12)
+        if not wheel:
+            return {"error": f"Нет игр для жанра {genre_id}"}, 400
         user.turn_phase = "wheel"
+        _pending_wheel[user.id] = wheel
         db.session.commit()
         payload = {
             **_user_payload(user),
-            "wheel": [],
+            "wheel": wheel,
+            "wheelType": "game",
             "source": src,
             "cellName": BOARD_BY_ID[user.position].name,
+            "blazerdGenreLabel": src["blazerdGenreLabel"],
             "user": user.to_public_dict(),
         }
         _emit("wheel_opened", payload)
-        payload["user"] = user.to_public_dict()
         return payload
 
     user.turn_phase = "wheel"
@@ -519,10 +736,14 @@ def open_wheel_for_user(user: User, genre_id: int | None = None) -> dict | tuple
     payload = {
         **_user_payload(user),
         "wheel": wheel,
+        "wheelType": "game",
         "source": src,
         "cellName": BOARD_BY_ID[user.position].name,
         "user": user.to_public_dict(),
+        **_wheel_ui_meta(user),
     }
+    if src.get("blazerdGenreLabel"):
+        payload["blazerdGenreLabel"] = src["blazerdGenreLabel"]
     _emit("wheel_opened", payload)
     # HLTB: только быстрые ссылки на клиенте (без тяжёлого парсинга при открытии)
     payload["user"] = user.to_public_dict()
@@ -546,7 +767,8 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
             return {"error": "Нет предметов для колеса"}, 400
         target_index = randbelow(len(items))
         chosen = items[target_index]
-        from backend.items.wheel_pick import choices_for_items
+        from backend.items.wheel_pick import choices_five_for_items
+        from backend.pending_wheels import get_shop_repick, pop_shop_repick, set_shop_pick
 
         payload = {
             **_user_payload(user),
@@ -555,22 +777,40 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
             "wheel": [i.get("wheelLabel") or i.get("name") for i in items],
             "wheelItems": items,
             "user": user.to_public_dict(),
+            **_wheel_ui_meta(user),
         }
-        if _is_oops_wheel_item(chosen):
-            choices = choices_for_items(items, target_index, four=True)
-            _pending_oops_pick[user.id] = {
-                "landedIndex": target_index,
-                "choices": choices,
-                "items": items,
-            }
-            payload["oopsPick"] = {
+        shop_repick = get_shop_repick(user.id)
+        if shop_repick:
+            mode = shop_repick.get("mode")
+            choices = choices_five_for_items(items, target_index)
+            pop_shop_repick(user.id)
+            set_shop_pick(
+                user.id,
+                {
+                    "mode": mode,
+                    "effectItemId": shop_repick.get("effectItemId"),
+                    "choices": choices,
+                    "landedIndex": target_index,
+                },
+            )
+            payload["shopPick"] = {
+                "pickKind": "shop",
+                "mode": mode,
                 "landedIndex": target_index,
                 "landedTitle": chosen.get("name"),
                 "choices": choices,
+                "pickCount": 1 if mode == "chat" else 2,
             }
         else:
             payload["selectedItemId"] = chosen.get("id")
             payload["selectedItemName"] = chosen.get("name")
+        _pending_spin[user.id] = {
+            "targetIndex": target_index,
+            "selectedItemId": payload.get("selectedItemId"),
+            "selectedItemName": payload.get("selectedItemName"),
+            "wheelType": "item",
+            "shopPick": payload.get("shopPick"),
+        }
         _emit("wheel_spin", payload)
         payload["user"] = user.to_public_dict()
         return payload
@@ -590,12 +830,18 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
         target_index = randbelow(len(wheel))
         selected = wheel[target_index]
 
+    from backend.services.game_history import player_has_game_title
+
+    duplicate_game = bool(selected) and player_has_game_title(user.id, selected)
+
     payload = {
         **_user_payload(user),
         "targetIndex": target_index,
         "selectedGame": selected,
         "wheel": wheel,
+        "duplicateGame": duplicate_game,
         "user": user.to_public_dict(),
+        **_wheel_ui_meta(user),
     }
 
     from backend.items.modifiers import _has_mod
@@ -625,82 +871,271 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
         }
         payload.pop("selectedGame", None)
 
+    _pending_spin[user.id] = {
+        "targetIndex": target_index,
+        "selectedGame": payload.get("selectedGame"),
+        "wheelType": "game",
+        "crownPick": payload.get("crownPick"),
+        "duplicateGame": duplicate_game,
+    }
+
     _emit("wheel_spin", payload)
     payload["user"] = user.to_public_dict()
     return payload
 
 
-def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, int]:
+def dismiss_wheel_for_user(user: User) -> dict | tuple[dict, int]:
     err = require_phase(user, "wheel")
     if err:
         return {"error": err}, 400
 
+    from backend.pending_wheels import pop_wheel_banner
+
+    _pending_item_wheel.pop(user.id, None)
+    _pending_wheel.pop(user.id, None)
+    _pending_spin.pop(user.id, None)
+    _pending_shop_pick.pop(user.id, None)
+    _pending_crown_pick.pop(user.id, None)
+    pop_wheel_banner(user.id)
+    user.turn_phase = "wheel_ready"
+    db.session.commit()
+    payload = {
+        **_user_payload(user),
+        "user": user.to_public_dict(),
+        **_wheel_ui_meta(user),
+    }
+    _emit("wheel_dismissed", payload)
+    return payload
+
+
+def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, int]:
     data = data or {}
     from backend.reward_wheels import confirm_reward_wheel_for_user, is_reward_wheel
 
     if is_reward_wheel(user.id) or data.get("wheelType") == "reward_item":
         return confirm_reward_wheel_for_user(user, data, emit=_emit)
 
+    err = require_phase(user, "wheel")
+    if err:
+        return {"error": err}, 400
+
     src = cell_game_source(user.position)
     if src.get("itemWheel") or data.get("wheelType") == "item":
-        oops_pending = _pending_oops_pick.get(user.id)
-        if oops_pending:
-            ci = data.get("oopsChoiceIndex")
-            if ci is None:
-                return {"error": "Выберите один из четырёх соседних пунктов"}, 400
-            try:
-                ci = int(ci)
-            except (TypeError, ValueError):
-                return {"error": "Некорректный выбор"}, 400
-            choices = oops_pending.get("choices") or []
-            picked = next((c for c in choices if c.get("choiceIndex") == ci), None)
-            if not picked:
-                return {"error": "Некорректный выбор"}, 400
-            item_id = picked.get("itemId")
-            if not item_id:
-                return {"error": "Не выбран предмет"}, 400
-            _pending_oops_pick.pop(user.id, None)
-        else:
-            item_id = data.get("selectedItemId")
-            if item_id is None:
-                items = _pending_item_wheel.get(user.id, [])
-                idx = data.get("targetIndex")
-                if idx is not None and 0 <= int(idx) < len(items):
-                    landed = items[int(idx)]
-                    if _is_oops_wheel_item(landed):
-                        return {
-                            "error": "«Ой, извините»: выберите один из четырёх соседних пунктов",
-                        }, 400
-                    item_id = landed.get("id")
-            if item_id is not None:
-                from backend.items.catalog import get_item
+        shop_pending = _pending_shop_pick.get(user.id)
+        if shop_pending:
+            mode = shop_pending.get("mode")
+            choices = shop_pending.get("choices") or []
+            effect_item_id = int(shop_pending.get("effectItemId") or (24 if mode == "chat" else 25))
+            cell = BOARD_BY_ID[user.position]
+            dice_label = str(data.get("diceLabel") or "?")
+            items_wheel = _pending_item_wheel.get(user.id, [])
+            from backend.items.admin_item_grant import resolve_admin_item_wheel
+            from backend.random_utils import choice as rand_choice
 
-                landed_def = get_item(int(item_id))
-                if landed_def and _is_oops_wheel_item(landed_def.to_dict()):
-                    return {
-                        "error": "«Ой, извините»: выберите один из четырёх соседних пунктов",
-                    }, 400
-            if not item_id:
-                return {"error": "Не выбран предмет"}, 400
+            def _sector(row: dict) -> dict:
+                wi = row.get("wheelIndex")
+                it = items_wheel[wi] if wi is not None and 0 <= wi < len(items_wheel) else {}
+                return {
+                    "itemId": row.get("itemId") or it.get("id"),
+                    "name": it.get("name"),
+                    "wheelLabel": row.get("title") or it.get("wheelLabel") or it.get("name"),
+                    "wheelIndex": wi,
+                }
 
+            if mode == "chat":
+                picked = rand_choice(choices) if choices else None
+                if not picked:
+                    return {"error": "Нет вариантов для голосования чата"}, 400
+                sectors = [_sector(picked)]
+                note = f"Чат выбрал: «{picked.get('title')}»"
+            elif mode == "leprechaun":
+                raw = data.get("shopChoiceIndexes")
+                if not isinstance(raw, list) or len(raw) != 2:
+                    return {"error": "Выберите ровно 2 сектора"}, 400
+                try:
+                    idxs = [int(x) for x in raw]
+                except (TypeError, ValueError):
+                    return {"error": "Некорректный выбор"}, 400
+                picked_rows = []
+                for ci in idxs:
+                    row = next((c for c in choices if c.get("choiceIndex") == ci), None)
+                    if not row:
+                        return {"error": "Некорректный выбор"}, 400
+                    picked_rows.append(row)
+                sectors = [_sector(r) for r in picked_rows]
+                note = "Выбрано: " + ", ".join(s.get("wheelLabel") or "?" for s in sectors)
+            else:
+                return {"error": "Неизвестный режим магазина"}, 400
+
+            _pending_shop_pick.pop(user.id, None)
+            result = resolve_admin_item_wheel(
+                user,
+                effect_item_id,
+                sectors,
+                dice_label=dice_label,
+                cell_name=cell.name,
+                note=note,
+            )
+            _pending_item_wheel.pop(user.id, None)
+            _pending_spin.pop(user.id, None)
+            payload = {
+                **_user_payload(user),
+                **result,
+                "wheelType": "item",
+                "user": user.to_public_dict(),
+                **_wheel_ui_meta(user),
+            }
+            from backend.items.wheel_extras import (
+                chain_extra_item_wheel,
+                finish_extra_wheel_chain,
+                resume_reward_phase_if_pending,
+            )
+
+            extra = chain_extra_item_wheel(
+                user,
+                cell_name=cell.name,
+                dice_label=dice_label,
+                emit=_emit,
+            )
+            if extra:
+                payload["openExtraWheel"] = True
+                payload.update(
+                    {
+                        k: extra[k]
+                        for k in (
+                            "wheel",
+                            "wheelItems",
+                            "wheelType",
+                            "source",
+                            "cellName",
+                            "extraWheelSpinsRemaining",
+                        )
+                        if k in extra
+                    }
+                )
+            elif resume_reward_phase_if_pending(user):
+                payload["resumeReward"] = True
+                payload["rewardSpinsRemaining"] = int(user.pending_reward_spins or 0)
+                payload["user"] = user.to_public_dict()
+            else:
+                restored = finish_extra_wheel_chain(user)
+                payload["user"] = user.to_public_dict()
+                if restored:
+                    payload["restoredPhase"] = restored
+            _emit("item_wheel_resolved", payload)
+            return payload
+        item_id = data.get("selectedItemId")
+        if item_id is None:
+            items = _pending_item_wheel.get(user.id, [])
+            idx = data.get("targetIndex")
+            if idx is not None and 0 <= int(idx) < len(items):
+                item_id = items[int(idx)].get("id")
+        if not item_id and data.get("targetIndex") is not None:
+            items = _pending_item_wheel.get(user.id, [])
+            idx = int(data["targetIndex"])
+            if 0 <= idx < len(items):
+                item_id = items[idx].get("id")
+        if not item_id:
+            return {"error": "Не выбран предмет"}, 400
+
+        from backend.items.admin_item_grant import resolve_admin_item_wheel
         from backend.items.wheel import apply_wheel_result
+        from backend.items.wheel_pick import vertical_neighbor_indices
+        from backend.pending_wheels import pop_two_for_one
 
         cell = BOARD_BY_ID[user.position]
-        result = apply_wheel_result(
-            user,
-            int(item_id),
-            dice_label=str(data.get("diceLabel") or "?"),
-            cell_name=cell.name,
-        )
+        dice_label = str(data.get("diceLabel") or "?")
+        items = _pending_item_wheel.get(user.id, [])
+
+        if pop_two_for_one(user.id):
+            idx = data.get("targetIndex")
+            if idx is None and data.get("selectedItemId") and items:
+                sid = int(data["selectedItemId"])
+                idx = next(
+                    (i for i, it in enumerate(items) if it.get("id") == sid),
+                    None,
+                )
+            if idx is None:
+                return {"error": "Не выбран сектор для «Два по цене одного»"}, 400
+            idx = int(idx)
+            if not items or idx < 0 or idx >= len(items):
+                return {"error": "Некорректный сектор колеса"}, 400
+            sectors = []
+            for wi in vertical_neighbor_indices(idx, len(items)):
+                it = items[wi]
+                sectors.append(
+                    {
+                        "itemId": it.get("id"),
+                        "name": it.get("name"),
+                        "wheelLabel": it.get("wheelLabel") or it.get("name"),
+                        "wheelIndex": wi,
+                    }
+                )
+            center_name = items[idx].get("name") or "?"
+            result = resolve_admin_item_wheel(
+                user,
+                23,
+                sectors,
+                dice_label=dice_label,
+                cell_name=cell.name,
+                note=f"Выпало: «{center_name}» → админ выдаст соседей сверху и снизу",
+            )
+        else:
+            result = apply_wheel_result(
+                user,
+                int(item_id),
+                dice_label=dice_label,
+                cell_name=cell.name,
+            )
         if result.get("error"):
             return result, 400
         _pending_item_wheel.pop(user.id, None)
+        _pending_spin.pop(user.id, None)
         payload = {
             **_user_payload(user),
             **result,
             "wheelType": "item",
             "user": user.to_public_dict(),
+            **_wheel_ui_meta(user),
         }
+        from backend.items.wheel_extras import (
+            chain_extra_item_wheel,
+            resume_reward_phase_if_pending,
+        )
+
+        extra = chain_extra_item_wheel(
+            user,
+            cell_name=cell.name,
+            dice_label=dice_label,
+            emit=_emit,
+        )
+        if extra:
+            payload["openExtraWheel"] = True
+            payload.update(
+                {
+                    k: extra[k]
+                    for k in (
+                        "wheel",
+                        "wheelItems",
+                        "wheelType",
+                        "source",
+                        "cellName",
+                        "extraWheelSpinsRemaining",
+                    )
+                    if k in extra
+                }
+            )
+        elif resume_reward_phase_if_pending(user):
+            payload["resumeReward"] = True
+            payload["rewardSpinsRemaining"] = int(user.pending_reward_spins or 0)
+            payload["user"] = user.to_public_dict()
+        else:
+            from backend.items.wheel_extras import finish_extra_wheel_chain
+
+            restored = finish_extra_wheel_chain(user)
+            payload["user"] = user.to_public_dict()
+            if restored:
+                payload["restoredPhase"] = restored
         _emit("item_wheel_resolved", payload)
         return payload
 
@@ -737,6 +1172,29 @@ def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, 
         title = str(data.get("selectedGame") or "").strip()
 
     genre_id = data.get("genreId")
+    if genre_id is None and src.get("genreId"):
+        genre_id = src.get("genreId")
+
+    from backend.items.admin_wheel import create_admin_stub_from_wheel, get_active_admin_wheel
+
+    if get_active_admin_wheel(user.id):
+        if not title:
+            return {"error": "Не выбрана игра"}, 400
+        cell_id = user.position
+        gid = int(genre_id) if genre_id is not None else None
+        stub = create_admin_stub_from_wheel(
+            user,
+            title,
+            genre_id=gid,
+            dice_label=str(data.get("diceLabel") or "?"),
+            cell_id=cell_id,
+        )
+        _pending_wheel.pop(user.id, None)
+        _pending_spin.pop(user.id, None)
+        payload = {**_user_payload(user), **stub}
+        _emit("game_assigned", payload)
+        return payload
+
     cell_id = user.position
     if genre_id:
         src["genreId"] = int(genre_id)
@@ -750,6 +1208,11 @@ def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, 
         if src.get("lottery"):
             return {"error": "Введите название игры"}, 400
         return {"error": "Не выбрана игра"}, 400
+
+    from backend.services.game_history import player_has_game_title
+
+    if player_has_game_title(user.id, title):
+        return {"error": "Уже выпадало", "duplicateGame": True}, 400
 
     is_durka = user.in_durka or cell_id == DURKA_CELL_ID
     game = create_player_game(
@@ -778,6 +1241,7 @@ def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, 
         extra={"gameId": game.id, "gameplayTags": gp},
     )
     _pending_wheel.pop(user.id, None)
+    _pending_spin.pop(user.id, None)
     payload = {
         **_user_payload(user),
         "game": game.to_dict(),

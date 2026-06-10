@@ -162,6 +162,12 @@ body.has-custom-bg {
   border-top: 1px solid var(--border);
 }
 
+.durka-choice-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .main {
   display: flex;
   align-items: center;
@@ -274,6 +280,56 @@ body.has-custom-bg {
   z-index: 3;
 }
 
+/* Клетка с логотипом компании: приглушённый фон, ярче арт */
+.board-cell.has-logo-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    rgba(0, 0, 0, 0.38) 0%,
+    rgba(0, 0, 0, 0.22) 45%,
+    rgba(0, 0, 0, 0.32) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cell-bg {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* cells/: растянуть на всю клетку */
+.board-cell.has-cell-art .cell-bg {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+  filter: brightness(1.06) contrast(1.08);
+}
+
+/* logos/: по центру, без искажений */
+.board-cell.has-logo-art .cell-bg {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  height: 90%;
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+  filter: brightness(1.14) contrast(1.2) saturate(1.08)
+    drop-shadow(0 2px 5px rgba(0, 0, 0, 0.55));
+}
+
+.board-cell.has-image .cell-name {
+  display: none;
+}
+
 .cell-name {
   font-weight: 700;
   font-size: clamp(0.45rem, 1.2vw, 0.7rem);
@@ -298,6 +354,7 @@ body.has-custom-bg {
 .cell-tokens {
   position: absolute;
   inset: 4px;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -512,6 +569,11 @@ body.has-custom-bg {
   font-size: 0.9rem;
 }
 
+.dice-accept-btn {
+  margin-top: 1rem;
+  width: 100%;
+}
+
 .dice-effects-panel {
   margin-top: 16px;
   padding: 14px 16px;
@@ -644,11 +706,63 @@ select.input {
   gap: 8px;
 }
 
+.genre-picker-grid .btn {
+  text-align: center;
+  padding: 0.45rem 0.35rem;
+  font-size: 0.85rem;
+  white-space: normal;
+  line-height: 1.2;
+}
+
 .profile-head {
   display: flex;
   gap: 16px;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.profile-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.profile-username {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.rename-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  max-width: 280px;
+}
+
+.profile-games-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.profile-games-head h3 {
+  margin: 0;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.profile-login-hint {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
 }
 
 .profile-actions {
@@ -742,6 +856,62 @@ select.input {
 .game-card {
   border-bottom: 1px solid var(--border);
   padding: 12px 0;
+}
+
+.game-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.wheel-already-played {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.wheel-spins-counter {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.wheel-vote-banners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.wheel-vote-banner {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(52, 152, 219, 0.2);
+  border: 1px solid rgba(52, 152, 219, 0.45);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.explosives-modal {
+  text-align: center;
+  max-width: 420px;
+}
+
+.explosives-modal h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.6rem;
+}
+
+.explosives-boom h2 {
+  color: var(--danger);
+}
+
+.explosives-survived h2 {
+  color: #2ecc71;
+}
+
+.explosives-overlay {
+  z-index: 1200;
 }
 
 .btn-row {
@@ -839,6 +1009,14 @@ select.input {
 .error {
   color: var(--danger);
   font-size: 0.9rem;
+}
+
+.wheel-error {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(220, 53, 69, 0.15);
+  border-radius: 6px;
+  font-weight: 600;
 }
 
 .wheel-modal-large {
@@ -1004,6 +1182,18 @@ select.input {
   color: var(--accent, #6dd58c);
   font-weight: 600;
   margin: 6px 0;
+}
+
+.inv-flavor {
+  font-style: italic;
+  color: var(--muted);
+  margin: 0.4rem 0 0.5rem;
+  line-height: 1.45;
+}
+
+.inv-mechanics {
+  margin: 0.25rem 0 0.5rem;
+  line-height: 1.5;
 }
 
 .inv-clover-actions {
@@ -1206,45 +1396,41 @@ select.input {
   margin: 0 0 4px;
 }
 
-.ai-roast-overlay {
-  position: fixed;
-  left: 50%;
-  top: 18px;
-  bottom: auto;
-  transform: translateX(-50%);
-  z-index: 12000;
-  pointer-events: none;
-  max-width: min(560px, 94vw);
+.badge.orange {
+  background: rgba(243, 156, 18, 0.25);
+  color: #f39c12;
 }
 
-.ai-roast-bubble.ai-roast-error {
-  border-color: var(--danger);
+.admin-genre-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
 }
 
-.ai-roast-bubble {
-  background: rgba(18, 22, 32, 0.94);
-  border: 2px solid var(--accent);
-  border-radius: 16px;
-  padding: 14px 18px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+.admin-genre-grid .btn {
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
 }
 
-.ai-roast-label {
-  margin: 0 0 6px;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent);
+.admin-wheel-turn .turn-hint {
+  margin-bottom: 0.35rem;
 }
 
-.ai-roast-text {
-  margin: 0;
-  font-size: 1.05rem;
-  line-height: 1.35;
+.admin-game-list button.pending-admin-game {
+  border-color: #f39c12;
+  color: #f39c12;
 }
 
-.ai-roast-loading {
-  margin: 0;
-  color: var(--muted);
+.wheel-modal-large {
+  position: relative;
 }
 
+.wheel-dismiss-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+}

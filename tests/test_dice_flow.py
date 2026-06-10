@@ -107,15 +107,43 @@ def test_time_rings_partner_user_id(app, player_client, actor, second_player):
 
 def test_time_rings_adds_step(app, actor):
     with app.app_context():
-        from backend.items.modifiers import apply_dice_roll
+        from backend.items.modifiers import _has_mod, apply_dice_roll
 
         reset_player(actor)
         activate_buff_for_next_game(
             actor.id,
             "time_ring_partner",
             label="Кольца",
-            turns=99,
+            turns=4,
         )
-        grant_inventory_item(actor.id, 11, 2)
         d1, d2, steps, *_ = apply_dice_roll(actor, 2, 2)
         assert steps == 5
+        ring = _has_mod(actor.id, "time_ring_partner")
+        assert ring is not None
+        assert ring.turns_remaining == 3
+
+
+def test_time_rings_use_links_four_turns_each(app, actor, second_player):
+    with app.app_context():
+        from backend.items.modifiers import _has_mod
+        from backend.items.use import use_inventory_item
+        from backend.models import PlayerInventoryItem
+
+        reset_player(actor)
+        reset_player(second_player)
+        grant_inventory_item(actor.id, 11, 1)
+        result = use_inventory_item(
+            actor,
+            11,
+            options={"partnerUserId": second_player.id},
+        )
+        assert result.get("ok")
+        assert PlayerInventoryItem.query.filter_by(
+            user_id=actor.id, item_def_id=11
+        ).first() is None
+        owner_ring = _has_mod(actor.id, "time_ring_partner")
+        partner_ring = _has_mod(second_player.id, "time_ring_partner")
+        assert owner_ring is not None
+        assert partner_ring is not None
+        assert owner_ring.turns_remaining == 4
+        assert partner_ring.turns_remaining == 4

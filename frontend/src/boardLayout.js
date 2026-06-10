@@ -105,7 +105,45 @@ export function cellColor(cell) {
   return COLOR_MAP[cell.colorGroup] || "#636e72";
 }
 
+/** Картинка клетки: компании — logos/, особые — cells/ по типу. */
+const SPECIAL_CELL_STEMS = {
+  start: "/cells/start",
+  lottery: "/cells/lottery",
+  durka: "/cells/durka",
+  trallalero: "/cells/trallalero",
+  question: "/cells/question",
+  trap_joy: "/cells/trap_joy",
+};
+
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+
+function cellImageStem(cell) {
+  if (!cell) return null;
+  if (cell.companyKey) return `/logos/${cell.companyKey}`;
+  return SPECIAL_CELL_STEMS[cell.type] || null;
+}
+
+/** Все варианты пути (jpg → png → webp) для fallback при onError. */
+export function cellImageCandidates(cell) {
+  const stem = cellImageStem(cell);
+  if (!stem) return [];
+  return IMAGE_EXTENSIONS.map((ext) => `${stem}${ext}`);
+}
+
+export function cellImageUrl(cell) {
+  const candidates = cellImageCandidates(cell);
+  return candidates[0] || null;
+}
+
+/** Картинка из cells/ (углы, ?, подлянка) — на всю клетку. */
+export function isSpecialCellArt(cell) {
+  if (!cell?.companyKey && cell?.type) {
+    return cell.type in SPECIAL_CELL_STEMS;
+  }
+  return false;
+}
+
+/** @deprecated используйте cellImageUrl */
 export function logoUrl(cell) {
-  if (!cell.companyKey) return null;
-  return `/logos/${cell.companyKey}.png`;
+  return cellImageUrl(cell);
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPost, apiUpload } from "../api";
+import { apiGet, apiPatch, apiPost, apiUpload, downloadApiFile } from "../api";
+import { playerName } from "../playerName";
 import InventoryModal from "./InventoryModal";
 import TurnHistoryModal from "./TurnHistoryModal";
 import PagedListFooter, { usePagedSlice } from "./PagedListFooter";
@@ -19,7 +20,7 @@ export function HistoryModal({ items, onClose }) {
         {items.map((g) => (
           <article key={g.id} className="history-card">
             <div className="badges">
-              <span className="badge purple">{g.username}</span>
+              <span className="badge purple">{g.displayName || g.username}</span>
               <span
                 className={`badge ${g.status === "completed" ? "green" : g.status === "dropped" ? "red" : "gray"}`}
               >
@@ -61,7 +62,7 @@ export function StatsModal({ rows, onClose }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.username}>
-              <td>{r.username}</td>
+              <td>{r.displayName || r.username}</td>
               <td className="green">{r.points}</td>
               <td>{r.gamesCompleted}</td>
               <td>{r.gamesDropped}</td>
@@ -182,19 +183,29 @@ export function ProfileModal({
   onClose,
   onRefresh,
   onGameCompleted,
+  onUserSync,
 }) {
   const isOwner = currentUser?.id === profile?.id;
   const [showInventory, setShowInventory] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [turnHistory, setTurnHistory] = useState([]);
   const active = games.find((g) => g.status === "active");
+  const pendingAdmin = games.find((g) => g.status === "pending_admin");
+  const currentGame = active || pendingAdmin;
   const [review, setReview] = useState(active?.review || "");
   const [rating, setRating] = useState(
     active?.rating != null ? String(active.rating) : ""
   );
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(playerName(profile));
   const gamesPaged = usePagedSlice(games);
+
+  useEffect(() => {
+    setNameDraft(playerName(profile));
+    setEditingName(false);
+  }, [profile?.id, profile?.displayName, profile?.username]);
 
   useEffect(() => {
     setReview(active?.review || "");
@@ -271,6 +282,32 @@ export function ProfileModal({
     });
   };
 
+  const saveUsername = async () => {
+    const next = nameDraft.trim();
+    if (!next || next === playerName(profile)) {
+      setEditingName(false);
+      setNameDraft(playerName(profile));
+      return;
+    }
+    await runBusy("rename", async () => {
+      const data = await apiPatch("/me/display-name", { displayName: next });
+      if (data.user) onUserSync?.(data.user);
+      await onRefresh?.();
+      setEditingName(false);
+    });
+  };
+
+  const downloadGamesXlsx = async () => {
+    if (!profile?.id) return;
+    const safeName = playerName(profile).replace(/[^\w\u0400-\u04FF.\- ]+/gu, "_");
+    await runBusy("xlsx", async () => {
+      await downloadApiFile(
+        `/players/${profile.id}/games.xlsx`,
+        `${safeName}_games.xlsx`
+      );
+    });
+  };
+
   const liveSeconds = active
     ? formatPlaySeconds(active.playSeconds, active.timerRunning, active.timerStartedAt)
     : null;
@@ -289,7 +326,7 @@ export function ProfileModal({
   };
 
   return (
-    <Modal title={profile?.username} onClose={onClose} wide>
+    <Modal title={playerName(profile)} onClose={onClose} wide>
       <div className="profile-head">
         <img src={profile?.avatarUrl} alt="" className="avatar-lg" />
         {isOwner && (
@@ -299,6 +336,58 @@ export function ProfileModal({
           </label>
         )}
         <div>
+          {isOwner && editingName ? (
+            <div className="rename-row">
+              <input
+                className="input"
+                value={nameDraft}
+                maxLength={24}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder="Новое имя"
+              />
+              <div className="btn-row">
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!!busy || !nameDraft.trim()}
+                  onClick={saveUsername}
+                >
+                  {busy === "rename" ? "Сохранение..." : "Сохранить"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => {
+                    setEditingName(false);
+                    setNameDraft(playerName(profile));
+                  }}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="profile-name-row">
+              <h3 className="profile-username">{playerName(profile)}</h3>
+              {isOwner && (
+                <button
+                  className="btn btn-sm"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => {
+                    setNameDraft(playerName(profile));
+                    setEditingName(true);
+                  }}
+                >
+                  Сменить имя
+                </button>
+              )}
+            </div>
+          )}
+          {isOwner && (
+            <p className="muted profile-login-hint">Логин: {profile?.username}</p>
+          )}
           <p>Очки: {profile?.points}⚡</p>
           <p>
             Пройдено {profile?.completedCount} · Дроп {profile?.droppedCount}
@@ -333,12 +422,12 @@ export function ProfileModal({
           <div className="profile-effects-grid">
             {inventory.buffs.map((b) => (
               <span key={`b-${b.id}`} className="effect-pill buff">
-                {b.gameplayHint || b.name}
+                {b.displayLine || b.name}
               </span>
             ))}
             {inventory.debuffs.map((d) => (
               <span key={`d-${d.id}`} className="effect-pill debuff">
-                {d.gameplayHint || d.name}
+                {d.displayLine || d.name}
               </span>
             ))}
           </div>
@@ -357,17 +446,32 @@ export function ProfileModal({
           cells={cells}
           playerPosition={profile?.position}
           currentUserId={currentUser?.id}
+          turnPhase={currentUser?.turnPhase}
           isOwner={isOwner}
           onClose={() => setShowInventory(false)}
           onRefresh={onRefresh}
+          onUserSync={onUserSync}
         />
       )}
-      <h3>Игры</h3>
+      <div className="profile-games-head">
+        <h3>Игры</h3>
+        <button
+          className="btn"
+          type="button"
+          disabled={!!busy || !games?.length}
+          onClick={downloadGamesXlsx}
+        >
+          {busy === "xlsx" ? "Скачивание..." : "Скачать XLSX"}
+        </button>
+      </div>
       <ul className="game-feed">
         {gamesPaged.visible.map((g) => (
           <li key={g.id} className="game-card">
             <div className="game-card-head">
-              <span>{g.status}</span>
+              {g.status !== "pending_admin" && <span>{g.status}</span>}
+              {g.status === "pending_admin" && (
+                <span className="badge orange">ждёт админа</span>
+              )}
               {g.isDurka && <span className="badge red">дурка</span>}
             </div>
             <h4>{g.title}</h4>
@@ -375,14 +479,16 @@ export function ProfileModal({
               {g.cellName} · {g.genreLabel} · кубик {g.diceRoll}
             </p>
             {gameplayTags(g.gameplayTags)}
-            <p>
-              HLTB: {g.hltbHours ?? "—"} ч · Время:{" "}
-              {formatPlaySeconds(g.playSeconds, g.timerRunning, g.timerStartedAt)}
-              {g.pointsEarned != null
-                ? ` · +${g.pointsEarned}⚡`
-                : " · очки позже"}
-            </p>
-            {g.review && (
+            {g.status !== "pending_admin" && (
+              <p>
+                HLTB: {g.hltbHours ?? "—"} ч · Время:{" "}
+                {formatPlaySeconds(g.playSeconds, g.timerRunning, g.timerStartedAt)}
+                {g.pointsEarned != null
+                  ? ` · +${g.pointsEarned}⚡`
+                  : " · очки позже"}
+              </p>
+            )}
+            {g.review && g.status !== "pending_admin" && g.rating != null && (
               <p>
                 {g.rating}/10 — {g.review}
               </p>
@@ -396,6 +502,19 @@ export function ProfileModal({
         shown={gamesPaged.shown}
         total={gamesPaged.total}
       />
+      {isOwner && pendingAdmin && !active && (
+        <div className="active-game-panel pending-admin-panel">
+          <h4 className="active-game-title">Ожидает админа: {pendingAdmin.title}</h4>
+          <p className="muted">
+            Выпало на колесе — админ назначит финальную игру. После активации
+            можно играть, писать отзыв и завершать прохождение.
+          </p>
+          <p className="muted">
+            {pendingAdmin.cellName} · {pendingAdmin.genreLabel} · кубик{" "}
+            {pendingAdmin.diceRoll}
+          </p>
+        </div>
+      )}
       {isOwner && active && (
         <div className="active-game-panel">
           <h4 className="active-game-title">Текущая: {active.title}</h4>

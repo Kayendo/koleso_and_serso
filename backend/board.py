@@ -45,6 +45,18 @@ GENRE_LABELS = {
     9: "Strategy / 4X / RTS",
 }
 
+GENRE_SHORT_LABELS = {
+    1: "Пазлы",
+    2: "Шутеры",
+    3: "Экшены",
+    4: "Приключения",
+    5: "Платформеры",
+    6: "Симуляторы",
+    7: "Хорроры",
+    8: "РПГ",
+    9: "Стратегии",
+}
+
 COMPANIES = {
     "kalawar": (1, "Kalawar"),
     "three_dp": (1, "THREE-DP"),
@@ -86,7 +98,7 @@ def _c(cid: int, key: str, color: str) -> BoardCell:
         genre_id=gid,
         company_key=key,
         color_group=color,
-        genre_label=GENRE_LABELS.get(gid) if gid else "Рандом 1–9",
+        genre_label=GENRE_LABELS.get(gid) if gid else "Выбор жанра",
     )
 
 
@@ -135,7 +147,7 @@ BOARD: list[BoardCell] = [
         genre_id=None,
         company_key="blazerd",
         color_group="blue",
-        genre_label="Рандом жанра 1–9",
+        genre_label="Выбор жанра",
     ),
     _c(24, "squidwardix", "gray"),
     _sp(25, "?", "question", "question", "Сложные игры ×1.5"),

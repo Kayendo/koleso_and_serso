@@ -101,10 +101,45 @@ def mod_keys(user_id: int) -> set[str]:
 
 
 def reset_player(user: User, *, phase: str = "idle", position: int = 0) -> None:
+    from backend.models import PlayerGame, PlayerInventoryItem, PlayerModifier
+    from backend.pending_wheels import (
+        pending_admin_item_grant,
+        pending_admin_wheel,
+        pending_chocolate_genre,
+        pending_crown_pick,
+        pending_dice_choice,
+        pending_item_wheel,
+        pending_resume_phase,
+        pending_shop_pick,
+        pending_shop_repick,
+        pending_spin,
+        pending_two_for_one,
+        pending_wheel,
+        pending_wheel_banner,
+    )
+
     user.turn_phase = phase
     user.position = position
     user.in_durka = False
     user.points = 10
+    user.pending_reward_spins = 0
+    user.reward_dice_ready = False
+    PlayerInventoryItem.query.filter_by(user_id=user.id).delete()
+    PlayerModifier.query.filter_by(user_id=user.id).delete()
+    PlayerGame.query.filter_by(user_id=user.id).delete()
+    pending_admin_wheel.pop(user.id, None)
+    pending_admin_item_grant.pop(user.id, None)
+    pending_wheel_banner.pop(user.id, None)
+    pending_resume_phase.pop(user.id, None)
+    pending_chocolate_genre.pop(user.id, None)
+    pending_item_wheel.pop(user.id, None)
+    pending_wheel.pop(user.id, None)
+    pending_spin.pop(user.id, None)
+    pending_crown_pick.pop(user.id, None)
+    pending_two_for_one.pop(user.id, None)
+    pending_shop_pick.pop(user.id, None)
+    pending_shop_repick.pop(user.id, None)
+    pending_dice_choice.pop(user.id, None)
     db.session.commit()
 
 

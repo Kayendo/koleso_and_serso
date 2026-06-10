@@ -81,15 +81,37 @@ cd frontend && npm run dev
 - `.env`: `COMMENTATOR_*`, `AI_TTS_VOICE` — см. `.env.example` и `data/VOICES.md`
 - Фразы не грузятся при старте страницы — только в фоне на сервере при первом тике
 
-## Логотипы компаний
+## Картинки на поле
 
-Положите изображения в `frontend/public/logos/<company_key>.png` (ключи из `backend/board.py`, например `blazerd.png`, `legko.png`) — подключение в UI можно добавить следующим шагом.
+**Компании** — `frontend/public/logos/<company_key>.jpg` (подойдут и `.png`, `.webp`)  
+**Особые клетки** — `frontend/public/cells/` (`start.jpg`, `question.jpg`, …)
+
+Формат: сначала ищется `.jpg`, затем `.png`. После добавления файлов обновите страницу.
 
 ## Что доделать позже (вы писали «опишу позже»)
 
 - Эффекты «Подлянка / Кайфарик»
 - Полные правила дропа
 - Автоматический парсинг Game Gauntlet (сейчас лотерея — ручной ввод названия после Roll на сайте)
+
+## Гифки в центре поля
+
+Случайные GIF с Tenor (`GET /api/tenor/meme`). Меняются при смене фазы игроков и **раз в час** (сокет `gif_pool_refresh`).
+
+**Настройка пула:**
+- `data/tenor_tags.txt` — теги поиска (один на строку)
+- `data/gif_fallback.json` — запасные URL, если Tenor недоступен
+- `.env`:
+  ```env
+  TENOR_POOL_REFRESH_ENABLED=1
+  TENOR_POOL_REFRESH_SEC=3600
+  TENOR_POOL_FIRST_DELAY=15
+  TENOR_POOL_LOW=20
+  TENOR_API_KEY=...
+  TENOR_SEARCH_TAGS=meme,funny,gaming
+  ```
+
+Статус пула: `GET /api/tenor/config`
 
 ## Структура
 

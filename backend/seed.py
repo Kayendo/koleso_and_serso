@@ -12,6 +12,8 @@ def seed_users() -> None:
         user.is_player = True
         user.is_admin = False
         user.is_judge = False
+        if not (user.display_name or "").strip():
+            user.display_name = acc["username"]
 
     admin = User.query.filter_by(username=ADMIN_ACCOUNT["username"]).first()
     if not admin:
@@ -30,6 +32,8 @@ def seed_users() -> None:
         if u.username not in {a["username"] for a in PLAYER_ACCOUNTS}:
             continue
         u.is_player = True
+        if not (u.display_name or "").strip():
+            u.display_name = u.username
         if u.turn_phase not in (
             "idle",
             "dice_choice",
@@ -39,6 +43,7 @@ def seed_users() -> None:
             "playing",
             "reward_items",
             "durka",
+            "durka_choice",
         ):
             u.turn_phase = "idle"
 

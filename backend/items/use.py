@@ -19,6 +19,19 @@ def _explosives_roll(user_id: int, options: dict) -> bool:
     return secrets.randbelow(2) == 0
 
 
+def _try_explosives_on_buff_use(user: User, item: "ItemDef", options: dict) -> str | None:
+    """Списать заряд взрывчатки и вернуть 'survived' | 'exploded' | None."""
+    if item.polarity != "buff" or item.kind != "item":
+        return None
+    from backend.items.inventory import consume_inventory_item, has_item
+
+    if not has_item(user.id, 7):
+        return None
+    if not consume_inventory_item(user.id, 7, 1):
+        return None
+    return "survived" if _explosives_roll(user.id, options) else "exploded"
+
+
 def use_inventory_item(
     user: User,
     item_id: int,
@@ -39,8 +52,36 @@ def use_inventory_item(
     row = PlayerInventoryItem.query.filter_by(
         user_id=user.id, item_def_id=item_id
     ).first()
-    if not row or row.quantity < 1:
+    from backend.items.inventory import _ensure_charges
+
+    if not row:
         return {"error": "Предмета нет в инвентаре"}, 400
+    _ensure_charges(row)
+    if row.charges_remaining < 1:
+        return {"error": "Предмета нет в инвентаре"}, 400
+
+    from backend.items.pairs import use_blocked_by_conflict
+
+    blocked, conflict_notes = use_blocked_by_conflict(user.id, item_id)
+    if blocked:
+        ctx = EffectContext(
+            user_id=user.id,
+            item=item,
+            actor_username=user.username,
+            options=options,
+        )
+        ctx.factors.extend(conflict_notes)
+        log_turn(
+            user.id,
+            summary=f"Предмет: {item.name}",
+            factors=ctx.factors,
+            extra={"itemId": item.id, "mutualDestroy": True},
+        )
+        return {
+            "ok": True,
+            "factors": ctx.factors,
+            "user": user.to_public_dict(),
+        }
 
     if item.id == 9:
         tid = options.get("targetItemId")
@@ -55,7 +96,12 @@ def use_inventory_item(
         target_row = PlayerInventoryItem.query.filter_by(
             user_id=user.id, item_def_id=tid
         ).first()
-        if not target_row or target_row.quantity < 1:
+        from backend.items.inventory import _ensure_charges
+
+        if not target_row:
+            return {"error": "Этого предмета нет в вашем инвентаре"}, 400
+        _ensure_charges(target_row)
+        if target_row.charges_remaining < 1:
             return {"error": "Этого предмета нет в вашем инвентаре"}, 400
 
     if item.id == 11:
@@ -80,19 +126,54 @@ def use_inventory_item(
                 "error": f"У {partner.username} уже есть связь колец",
             }, 400
 
-    if item.polarity == "buff":
-        exp = PlayerInventoryItem.query.filter_by(user_id=user.id, item_def_id=7).first()
-        if exp and exp.quantity > 0:
-            exp.quantity -= 1
-            if exp.quantity <= 0:
-                db.session.delete(exp)
-            db.session.commit()
-            if not _explosives_roll(user.id, options):
-                return {
-                    "ok": False,
-                    "message": "Взрывчатка: эффект не сработал",
-                    "user": user.to_public_dict(),
-                }
+    if item.id == 15:
+        if user.turn_phase != "wheel_ready":
+            return {
+                "error": "Шоколад можно использовать только после броска кубика, перед колесом игр",
+            }, 400
+        genre_raw = options.get("genreId")
+        if genre_raw is None:
+            from backend.board import GENRE_LABELS, GENRE_SHORT_LABELS
+
+            return {
+                "error": "Выберите категорию игр",
+                "needsGenrePick": True,
+                "genres": [
+                    {
+                        "id": gid,
+                        "label": GENRE_LABELS[gid],
+                        "shortLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+                        "buttonLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+                    }
+                    for gid in sorted(GENRE_LABELS)
+                ],
+            }, 400
+        try:
+            genre_id = int(genre_raw)
+        except (TypeError, ValueError):
+            return {"error": "Некорректная категория игр"}, 400
+        from backend.board import GENRE_LABELS
+
+        if genre_id not in GENRE_LABELS:
+            return {"error": "Неизвестная категория игр"}, 400
+
+    if item.id in (24, 25):
+        if user.turn_phase != "wheel_ready":
+            return {
+                "error": "Используйте после броска кубика, перед колесом приколов",
+            }, 400
+
+    if item.id in (40, 41):
+        if user.turn_phase != "wheel_ready":
+            return {
+                "error": "Используйте после броска кубика, перед колесом игр",
+            }, 400
+        from backend.board import BOARD_BY_ID
+
+        if BOARD_BY_ID[user.position].cell_type == "trap_joy":
+            return {"error": "На клетке предметов законы не используются"}, 400
+
+    explosives_roll = _try_explosives_on_buff_use(user, item, options)
 
     if not consume_inventory_item(user.id, item_id):
         return {"error": "Не удалось списать предмет"}, 400
@@ -108,33 +189,66 @@ def use_inventory_item(
     )
     ctx.note(f"{user.username}: «{item.name}»")
 
-    if item.id == 5:
-        active = (
-            PlayerGame.query.filter_by(user_id=user.id, status="active")
-            .order_by(PlayerGame.id.desc())
-            .first()
-        )
-        if active:
-            user.turn_phase = "wheel_ready"
-            ctx.note("«Свиток реролла»: откройте колесо заново")
-            db.session.commit()
-    elif item.id == 6:
-        ctx.note("«Шар всезнания»: гайд/спидран разрешён")
-    elif item.id == 15 and options.get("genreId"):
-        ctx.note(f"«Шоколад»: жанр {options['genreId']}")
-    else:
-        apply_item_effect(ctx, subject, db)
+    apply_effect = explosives_roll != "exploded"
+    if apply_effect:
+        if item.id == 5:
+            from backend.items.gameplay import clear_gameplay_modifiers_for_reroll
+
+            active = (
+                PlayerGame.query.filter_by(user_id=user.id, status="active")
+                .order_by(PlayerGame.id.desc())
+                .first()
+            )
+            cleared = clear_gameplay_modifiers_for_reroll(user.id)
+            ctx.factors.extend(cleared)
+            if active:
+                active.gameplay_tags = "[]"
+                user.turn_phase = "wheel_ready"
+                ctx.note("«Свиток реролла»: откройте колесо заново")
+                db.session.commit()
+        elif item.id == 15:
+            from backend.board import GENRE_LABELS
+            from backend.pending_wheels import set_chocolate_genre
+
+            gid = int(options["genreId"])
+            set_chocolate_genre(user.id, gid)
+            label = GENRE_LABELS.get(gid, f"Жанр {gid}")
+            ctx.note(f"«Шоколад»: колесо — категория «{label}»")
+        else:
+            apply_item_effect(ctx, subject, db)
+    elif explosives_roll == "exploded":
+        ctx.note("«Взрывчатка»: ВЫ ВЗОРВАЛИСЬ — эффект предмета не сработал")
 
     log_turn(
         user.id,
         summary=f"Предмет: {item.name}",
         factors=ctx.factors,
-        extra={"itemId": item.id, "targetUserId": target_user_id},
+        extra={
+            "itemId": item.id,
+            "targetUserId": target_user_id,
+            "explosivesRoll": explosives_roll,
+        },
     )
+    if apply_effect and target and target.id != user.id:
+        from backend.items.inventory import log_target_effect
 
-    return {
-        "ok": True,
+        log_target_effect(
+            target.id,
+            actor_username=user.username,
+            item_name=item.name,
+            factors=ctx.factors,
+            item_id=item.id,
+        )
+
+    payload = {
+        "ok": apply_effect,
         "factors": ctx.factors,
         "user": user.to_public_dict(),
         "targetUser": target.to_public_dict() if target else None,
     }
+    if explosives_roll:
+        payload["explosivesRoll"] = explosives_roll
+        payload["explosivesMessage"] = (
+            "ВЫ УЦЕЛЕЛИ" if explosives_roll == "survived" else "ВЫ ВЗОРВАЛИСЬ"
+        )
+    return payload

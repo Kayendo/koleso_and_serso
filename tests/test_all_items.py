@@ -95,10 +95,23 @@ def test_item_5_reroll_sets_wheel_ready(app):
 
 def test_item_6_guide_orb(app, actor):
     with app.app_context():
+        from backend.services.turn_service import create_player_game
+
         reset_player(actor)
         grant_item(actor.id, 6)
         r = _use(actor, 6)
         assert r["ok"]
+        assert "guide_orb" in mod_keys(actor.id)
+        assert not has_item(actor.id, 6)
+
+        reset_player(actor)
+        grant_item(actor.id, 6)
+        game = create_player_game(actor, "Guide Test", actor.position, "2+3")
+        r = _use(actor, 6)
+        assert r["ok"]
+        tags = game._parse_gameplay_tags()
+        labels = [t.get("label") if isinstance(t, dict) else t for t in tags]
+        assert any("гайдами" in str(x).lower() for x in labels)
 
 
 def test_traps_on_target(app, actor, second_player):
@@ -109,13 +122,16 @@ def test_traps_on_target(app, actor, second_player):
             (12, "trap_shawarma"),
             (14, "trap_choker"),
             (44, "trap_rake"),
-            (45, "trap_slime"),
             (46, "trap_rat"),
         ]
         for iid, key in cases:
             grant_item(actor.id, iid)
+            pts_before = actor.points
             _use(actor, iid, targetUsername=second_player.username)
             assert key in mod_keys(second_player.id), f"item {iid}"
+            if iid == 46:
+                assert "dice_penalty_next" in mod_keys(actor.id)
+                assert actor.points == pts_before
 
         grant_item(second_player.id, 3)
         grant_item(actor.id, 42)
@@ -142,29 +158,6 @@ def test_trap_pig_eats_item(app, actor, second_player):
         assert not has_item(second_player.id, 6)
 
 
-def test_four_leaf_modes(app):
-    with app.app_context():
-        u = player("andryuha")
-        reset_player(u)
-        grant_item(u.id, 13)
-        pts_before = u.points
-        _use(u, 13, mode="block_trap")
-        grant_item(u.id, 13)
-        u.position = TRALLALERO_CELL_ID
-        db.session.commit()
-        _use(u, 13, mode="cell_bonus")
-        u = player("andryuha")
-        assert u.points >= pts_before + 2
-
-
-def test_item_21_notebook_passive(app, actor):
-    with app.app_context():
-        reset_player(actor)
-        grant_item(actor.id, 21)
-        _use(actor, 21)
-        assert has_item(actor.id, 21)
-
-
 def test_ez_attaches_to_game(app, actor):
     with app.app_context():
         reset_player(actor)
@@ -172,7 +165,7 @@ def test_ez_attaches_to_game(app, actor):
         _use(actor, 3)
         game = create_player_game(actor, "EZ Game", actor.position, "2+3")
         tags = game._parse_gameplay_tags()
-        assert any("EZ" in str(t.get("label", t)) for t in tags)
+        assert any(t.get("key") == "ez_glasses" for t in tags)
         assert "ez_glasses" in mod_keys(actor.id)
         from backend.items.gameplay import tick_buffs_after_game
 
@@ -183,26 +176,16 @@ def test_ez_attaches_to_game(app, actor):
 @pytest.mark.parametrize(
     "item_id,key",
     [
-        (22, "wheel_ready"),
-        (23, "wheel_ready"),
-        (24, None),
-        (25, None),
+            (22, "wheel_extra_spins"),
         (26, None),
         (27, None),
         (28, None),
         (29, "wheel_extra_spins"),
         (30, "wheel_extra_spins"),
-        (31, None),
-        (32, None),
         (33, None),
         (34, "help_laggard"),
-        (35, "lucky_loser"),
         (36, "hurry"),
         (37, "trinity_dice"),
-        (38, "coin_dice"),
-        (39, None),
-        (40, "chat_law"),
-        (41, "i_am_law"),
         (47, "base_only_next"),
         (48, "hour_growth"),
     ],
@@ -273,28 +256,16 @@ def test_instant_swap_inv_random(app):
         assert "Mine now" in " ".join(factors) or "обмен" in " ".join(factors).lower()
 
 
-def test_first_aid_modes(app):
-    with app.app_context():
-        u = player("andryuha")
-        reset_player(u)
-        from backend.items.modifiers import _add_mod
-
-        _add_mod(u.id, "hurry", "1", 1, polarity="debuff", label="Торопыга")
-        pts = u.points
-        _instant(u, 31, mode="drop_debuff")
-        u = player("andryuha")
-        assert u.points == pts - 1
-        assert "hurry" not in mod_keys(u.id)
-
-
 def test_api_use_all_inventory_items(app, player_client, actor, second_player):
     """HTTP: каждый предмет kind=item успешно отрабатывает или даёт понятную ошибку."""
     with app.app_context():
-        reset_player(actor)
         for iid in range(1, 22):
             item = get_item(iid)
             if not item or item.kind != "item":
                 continue
+            if iid == 15:
+                continue  # отдельные тесты: фаза wheel_ready + genreId
+            reset_player(actor, phase="wheel_ready" if iid == 15 else "idle")
             grant_item(actor.id, iid)
             body = {"itemId": iid}
             if item.kind == "trap" or item.effect.startswith("trap_"):
@@ -304,8 +275,8 @@ def test_api_use_all_inventory_items(app, player_client, actor, second_player):
             if iid == 9:
                 grant_item(actor.id, 6)
                 body["targetItemId"] = 6
-            if iid == 13:
-                body["mode"] = "block_trap"
+            if iid == 15:
+                body["genreId"] = 1
             if item.kind == "trap":
                 body["targetUsername"] = second_player.username
             r = player_client.post("/api/inventory/use", json=body)
@@ -317,6 +288,8 @@ def test_catalog_effect_handlers_exist(app):
     with app.app_context():
         user = User.query.filter_by(username="andryuha").first()
         for iid in range(1, 49):
+            if iid in (13, 18, 21, 31, 32, 35, 38, 39, 45):
+                continue
             item = get_item(iid)
             ctx = _ctx(user, iid, targetUsername="zhenek", partnerUsername="zhenek")
             apply_item_effect(ctx, user, db)

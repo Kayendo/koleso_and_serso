@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from flask import Blueprint, current_app, jsonify, request, send_from_directory
+from flask import Blueprint, current_app, jsonify, request, send_file, send_from_directory
 from flask_login import current_user, login_required, login_user, logout_user
 
 from backend.board import get_board_json
@@ -17,11 +17,14 @@ from backend.turn_actions import (
     reveal_trinity_dice_for_user,
     confirm_dice_roll_for_user,
     confirm_wheel_for_user,
+    dismiss_wheel_for_user,
     durka_roll_for_user,
+    durka_step_for_user,
     open_wheel_for_user,
     roll_dice_for_user,
     spin_wheel_for_user,
 )
+from backend.items.wheel_extras import open_extra_wheel_for_user
 from backend.services.hltb_service import hltb_url_for_title
 from backend.tenor_service import pick_meme_gif
 from backend.turn_logic import require_phase
@@ -38,6 +41,13 @@ def board():
 def tenor_meme():
     gif = pick_meme_gif()
     return jsonify(gif)
+
+
+@api.route("/tenor/config")
+def tenor_config():
+    from backend.tenor_service import tags_for_api
+
+    return jsonify(tags_for_api())
 
 
 @api.route("/hltb/links", methods=["POST"])
@@ -109,6 +119,23 @@ def player_inventory(user_id: int):
     return jsonify(get_inventory_state(user_id))
 
 
+@api.route("/genres")
+def genres():
+    from backend.board import GENRE_LABELS, GENRE_SHORT_LABELS
+
+    return jsonify(
+        [
+            {
+                "id": gid,
+                "label": GENRE_LABELS[gid],
+                "shortLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+                "buttonLabel": GENRE_SHORT_LABELS.get(gid, GENRE_LABELS[gid]),
+            }
+            for gid in sorted(GENRE_LABELS)
+        ]
+    )
+
+
 @api.route("/inventory/use", methods=["POST"])
 @login_required
 def inventory_use():
@@ -159,6 +186,7 @@ def history():
     for g in games:
         d = g.to_dict()
         d["username"] = g.player.username if g.player else "?"
+        d["displayName"] = g.player.public_name() if g.player else "?"
         out.append(d)
     return jsonify(out)
 
@@ -176,6 +204,7 @@ def statistics():
         rows.append(
             {
                 "username": u.username,
+                "displayName": u.public_name(),
                 "points": u.points,
                 "gamesCompleted": len(completed),
                 "gamesDropped": dropped,
@@ -240,6 +269,42 @@ def upload_avatar():
     return jsonify({"avatarUrl": current_user.avatar_url})
 
 
+@api.route("/me/display-name", methods=["PATCH"])
+@login_required
+def patch_my_display_name():
+    if not current_user.is_player:
+        return jsonify({"error": "Только игроки могут менять имя"}), 400
+    from backend.services.display_name import rename_display_name
+
+    data = request.get_json() or {}
+    user, err = rename_display_name(
+        current_user, data.get("displayName") or data.get("username")
+    )
+    if err:
+        return jsonify({"error": err}), 400
+    payload = {"user": user.to_public_dict()}
+    try:
+        socketio = current_app.extensions["socketio"]
+        socketio.emit("players_updated", payload, room="lobby", namespace="/")
+    except (KeyError, RuntimeError):
+        pass
+    return jsonify(payload)
+
+
+@api.route("/players/<int:user_id>/games.xlsx")
+def export_player_games_xlsx(user_id: int):
+    from backend.services.games_export import build_games_xlsx, safe_export_filename
+
+    user = User.query.get_or_404(user_id)
+    buf = build_games_xlsx(user)
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=safe_export_filename(user.public_name()),
+    )
+
+
 @api.route("/games/<int:game_id>/timer", methods=["POST"])
 @login_required
 def timer_toggle(game_id: int):
@@ -285,6 +350,9 @@ def complete_game(game_id: int):
     game = PlayerGame.query.get_or_404(game_id)
     if game.user_id != current_user.id:
         return jsonify({"error": "Forbidden"}), 403
+    from backend.services.game_history import ensure_turn_phase_matches_ongoing_game
+
+    ensure_turn_phase_matches_ongoing_game(current_user)
     err = require_phase(current_user, "playing")
     if err:
         return jsonify({"error": err}), 400
@@ -327,7 +395,6 @@ def complete_game(game_id: int):
     game.points_earned = earn
     game.status = "completed"
     game.finished_at = now
-    current_user.points += earn
     current_user.completed_count += 1
     if current_user.in_durka:
         current_user.in_durka = False
@@ -370,6 +437,9 @@ def drop_game(game_id: int):
     game = PlayerGame.query.get_or_404(game_id)
     if game.user_id != current_user.id:
         return jsonify({"error": "Forbidden"}), 403
+    from backend.services.game_history import ensure_turn_phase_matches_ongoing_game
+
+    ensure_turn_phase_matches_ongoing_game(current_user)
     err = require_phase(current_user, "playing")
     if err:
         return jsonify({"error": err}), 400
@@ -454,6 +524,16 @@ def http_durka_roll():
     return jsonify(result)
 
 
+@api.route("/turn/durka-step", methods=["POST"])
+@login_required
+def http_durka_step():
+    data = request.get_json() or {}
+    result = durka_step_for_user(current_user, data.get("direction"))
+    if isinstance(result, tuple):
+        return jsonify(result[0]), result[1]
+    return jsonify(result)
+
+
 @api.route("/turn/open-wheel", methods=["POST"])
 @login_required
 def http_open_wheel():
@@ -471,6 +551,24 @@ def http_open_wheel():
 @login_required
 def http_spin_wheel():
     result = spin_wheel_for_user(current_user)
+    if isinstance(result, tuple):
+        return jsonify(result[0]), result[1]
+    return jsonify(result)
+
+
+@api.route("/turn/dismiss-wheel", methods=["POST"])
+@login_required
+def http_dismiss_wheel():
+    result = dismiss_wheel_for_user(current_user)
+    if isinstance(result, tuple):
+        return jsonify(result[0]), result[1]
+    return jsonify(result)
+
+
+@api.route("/turn/open-extra-wheel", methods=["POST"])
+@login_required
+def http_open_extra_wheel():
+    result = open_extra_wheel_for_user(current_user)
     if isinstance(result, tuple):
         return jsonify(result[0]), result[1]
     return jsonify(result)

@@ -12,7 +12,6 @@ from backend.items.modifiers import (
     _has_mod,
     apply_completion_points,
     count_inventory_debuffs,
-    place_slime_trail,
 )
 from backend.models import PlayerGame, PlayerInventoryItem, User, db
 from backend.random_utils import choice, randbelow
@@ -50,10 +49,13 @@ def _charges(item: ItemDef) -> int:
         return 1
 
 
+# На колесе приколов срабатывают сразу, даже если kind=item (магазины, «два по одному»)
+WHEEL_DROP_INSTANT_IDS = frozenset({23, 24, 25})
+
+
 def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
     key, val = _key_val(ctx.item.effect)
     name = ctx.item.name
-    iid = ctx.item.id
 
     handlers = {
         "cheat_dice": _activate_dice_item,
@@ -61,26 +63,26 @@ def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
         "ez_glasses": _activate_charge_buff,
         "rambo_band": _activate_charge_buff,
         "reroll_game": _activate_simple_use,
-        "guide_orb": _activate_simple_use,
+        "guide_orb": _activate_guide_orb,
         "explosives": _activate_simple_use,
         "wheel_crown": _wheel_crown_activate,
         "repair_kit": _repair_kit,
         "reverse_boots": _activate_charge_buff,
         "time_rings": _time_rings,
         "trap_shawarma": _trap_shawarma,
-        "four_leaf": _four_leaf,
         "trap_choker": _trap_choker,
         "chocolate": _activate_simple_use,
+        "shop_chat": _activate_shop_chat,
+        "shop_leprechaun": _activate_shop_leprechaun,
+        "chat_law": _activate_law_item,
+        "i_am_law": _activate_law_item,
         "toilet_paper": _activate_simple_use,
         "leaky_parachute": _activate_simple_use,
-        "lucky_thimble": _activate_simple_use,
         "trap_fisting": _trap_fisting,
         "totem_moshnya": _activate_charge_buff,
-        "plus_notebook": _grant_passive,
         "trap_rust": _trap_rust,
         "trap_pig": _trap_pig,
         "trap_rake": _trap_rake,
-        "trap_slime": _trap_slime,
         "trap_rat": _trap_rat,
     }
     fn = handlers.get(key)
@@ -88,23 +90,14 @@ def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
         fn(ctx, user)
         return
     if key.startswith("wheel_") or key in (
-        "two_for_one",
-        "shop_chat",
-        "shop_leprechaun",
         "bandit",
         "dirtykin",
         "castling",
-        "first_aid",
-        "oops_neighbor",
+        "two_for_one",
         "swap_inv_random",
         "help_laggard",
-        "lucky_loser",
         "hurry",
         "trinity_dice",
-        "coin_dice",
-        "where_am_i",
-        "chat_law",
-        "i_am_law",
         "base_only_next",
         "hour_growth",
     ):
@@ -115,13 +108,76 @@ def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
     ctx.note(f"«{name}»: эффект {key} (уточните реализацию)")
 
 
+def _activate_shop_chat(ctx: EffectContext, user: User) -> None:
+    from backend.items.wheel_buffs import activate_shop_buff
+
+    activate_shop_buff(ctx, user, mode="chat")
+
+
+def _activate_shop_leprechaun(ctx: EffectContext, user: User) -> None:
+    from backend.items.wheel_buffs import activate_shop_buff
+
+    activate_shop_buff(ctx, user, mode="leprechaun")
+
+
+def _activate_law_item(ctx: EffectContext, user: User) -> None:
+    from backend.items.wheel_buffs import activate_law_buff
+
+    activate_law_buff(ctx, user)
+
+
 def _grant_charges(ctx: EffectContext, user: User) -> None:
     """Только пополнение инвентаря (колесо и т.п.), без активации."""
     inv.grant_inventory_item(user.id, ctx.item.id)
     ctx.note(f"«{ctx.item.name}» → инвентарь ({_charges(ctx.item)} зар.)")
 
 
+def _activate_guide_orb(ctx: EffectContext, user: User) -> None:
+    """Шар всезнания: бафф на 1 игру + тег на текущую активную игру."""
+    from backend.items.gameplay import activate_buff_for_next_game, attach_gameplay_to_game
+
+    activate_buff_for_next_game(
+        user.id,
+        "guide_orb",
+        item_id=ctx.item.id,
+        label=ctx.item.name,
+        polarity="buff",
+        turns=1,
+    )
+    active = (
+        PlayerGame.query.filter_by(user_id=user.id, status="active")
+        .order_by(PlayerGame.id.desc())
+        .first()
+    )
+    if active:
+        tags = attach_gameplay_to_game(active, user)
+        if tags:
+            ctx.note(f"«{ctx.item.name}»: {tags[0]} (текущая игра)")
+        else:
+            ctx.note(f"«{ctx.item.name}»: прохождение с гайдами (текущая игра)")
+    else:
+        ctx.note("«Шар всезнания»: прохождение с гайдами на следующую игру")
+
+
+def _activate_toilet_paper(ctx: EffectContext, user: User) -> None:
+    _add_mod(
+        user.id,
+        "toilet_paper_ready",
+        "1",
+        1,
+        item_id=ctx.item.id,
+        label=ctx.item.name,
+        desc="При следующем дропе — возврат на клетку прошлого хода",
+        polarity="buff",
+    )
+    ctx.note("«Туалетка»: при следующем дропе — возврат на клетку прошлого хода")
+
+
 def _activate_simple_use(ctx: EffectContext, user: User) -> None:
+    key, _ = _key_val(ctx.item.effect)
+    if key == "toilet_paper":
+        _activate_toilet_paper(ctx, user)
+        return
     ctx.note(f"«{ctx.item.name}» использован (заряд списан)")
 
 
@@ -156,9 +212,11 @@ def _activate_dice_item(ctx: EffectContext, user: User) -> None:
     ctx.note(f"«{ctx.item.name}»: активен на следующий бросок кубика")
 
 
-def _activate_charge_buff(ctx: EffectContext, user: User) -> None:
-    """Использование из инвентаря: заряд уже списан в use.py."""
-    from backend.items.gameplay import activate_buff_for_next_game
+def _activate_charge_buff(
+    ctx: EffectContext, user: User, *, pending_inventory_charge: bool = False
+) -> None:
+    """Использование из инвентаря: заряд уже списан в use.py (если не pending)."""
+    from backend.items.gameplay import TICK_ON_GAME_END, activate_buff_for_next_game, attach_gameplay_to_game
 
     key, _ = _key_val(ctx.item.effect)
     polarity = ctx.item.polarity
@@ -169,15 +227,34 @@ def _activate_charge_buff(ctx: EffectContext, user: User) -> None:
         label=ctx.item.name,
         polarity=polarity,
         turns=1,
+        pending_inventory_charge=pending_inventory_charge,
     )
     hint = {
         "ez_glasses": "лёгкая сложность на следующую игру",
         "rambo_band": "макс. сложность на следующую игру",
-        "totem_moshnya": "базово 3 очка на следующую игру",
+        "totem_moshnya": "3 базовых + бонусы HLTB на следующую игру",
         "reverse_boots": "движение назад на следующий ход",
         "trinity_dice": "3 кубика на следующий ход",
     }.get(key or "", "эффект на следующую игру")
-    ctx.note(f"«{ctx.item.name}»: {hint} (заряд списан)")
+    if key in TICK_ON_GAME_END:
+        active = (
+            PlayerGame.query.filter_by(user_id=user.id, status="active")
+            .order_by(PlayerGame.id.desc())
+            .first()
+        )
+        if active:
+            tags = attach_gameplay_to_game(active, user)
+            if tags:
+                ctx.note(f"«{ctx.item.name}»: {tags[0]} (текущая игра)")
+            elif pending_inventory_charge:
+                ctx.note(f"«{ctx.item.name}»: {hint} (в инвентаре + активный эффект)")
+            else:
+                ctx.note(f"«{ctx.item.name}»: {hint} (текущая игра)")
+            return
+    if pending_inventory_charge:
+        ctx.note(f"«{ctx.item.name}»: {hint} (в инвентаре + активный эффект)")
+    else:
+        ctx.note(f"«{ctx.item.name}»: {hint} (заряд списан)")
 
 
 def _grant_passive(ctx: EffectContext, user: User) -> None:
@@ -286,30 +363,11 @@ def _trap_rake(ctx: EffectContext, user: User) -> None:
     ctx.note(f"«Грабли» → {target.username}")
 
 
-def _trap_slime(ctx: EffectContext, user: User) -> None:
-    target = _resolve_target(ctx)
-    if not target:
-        return
-    _add_mod(
-        target.id,
-        "trap_slime",
-        "1",
-        1,
-        item_id=45,
-        label="Липкая жижа",
-        polarity="debuff",
-    )
-    place_slime_trail(target.id, target.position)
-    ctx.note(f"«Липкая жижа» → {target.username}")
-
-
 def _trap_rat(ctx: EffectContext, user: User) -> None:
-    target = _resolve_target(ctx)
+    target = _resolve_target(ctx) or user
     if not target:
         return
-    if ctx.options.get("refuse"):
-        ctx.note("«Крыса»: отказ — реролл колеса (вручную)")
-        return
+    thrower = User.query.filter_by(username=ctx.actor_username).first()
     _add_mod(
         target.id,
         "trap_rat",
@@ -319,51 +377,17 @@ def _trap_rat(ctx: EffectContext, user: User) -> None:
         label="Крыса",
         polarity="debuff",
     )
-    user.points = max(0, user.points - 1)
-    ctx.note(f"«Крыса»: {target.username} −3 к броску, вы −1 очко")
-
-
-def _four_leaf(ctx: EffectContext, user: User) -> None:
-    from backend.items.clover import clover_cell_label, is_clover_cell
-
-    mode = ctx.options.get("mode")
-    if mode == "block_trap":
-        ctx.note("«Клевер»: ловушка отбита")
-        return
-
-    if mode == "cell_bonus":
-        if not is_clover_cell(user.position):
-            ctx.note("«Клевер»: +2 только на Траллалеро / Лотерее / «?»")
-            return
-        user.points += 2
-        db.session.commit()
-        cell = BOARD_BY_ID[user.position]
-        ctx.note(
-            f"«Клевер» на {clover_cell_label(cell.cell_type)}: +2 очка"
-        )
-        return
-
-    if mode == "cell_easy":
-        if not is_clover_cell(user.position):
-            ctx.note("«Клевер»: лёгкая сложность только на Траллалеро / Лотерее / «?»")
-            return
-        cell = BOARD_BY_ID[user.position]
+    if thrower:
         _add_mod(
-            user.id,
-            "four_leaf_easy",
-            cell.cell_type,
+            thrower.id,
+            "dice_penalty_next",
+            "1",
             1,
-            item_id=13,
-            label="Клевер: лёгкая сложность",
-            desc=cell.name,
+            item_id=46,
+            label="Крыса",
+            polarity="debuff",
         )
-        ctx.note(
-            f"«Клевер» на {clover_cell_label(cell.cell_type)}: лёгкая сложность на эту игру"
-        )
-        return
-
-    inv.grant_inventory_item(user.id, 13)
-    ctx.note("«Четырехлистный клевер» → инвентарь")
+    ctx.note(f"«Крыса»: {target.username} −3 к броску, вы −1 к броску")
 
 
 def _repair_kit(ctx: EffectContext, user: User) -> None:
@@ -378,8 +402,11 @@ def _repair_kit(ctx: EffectContext, user: User) -> None:
         ctx.note("Предмет не найден")
         return
     defn = get_item(int(target_id))
-    r.quantity += 1
-    db.session.commit()
+    from backend.items.inventory import add_item_charges
+
+    if not add_item_charges(user.id, int(target_id), 1):
+        ctx.note("Предмет не найден")
+        return
     name = defn.name if defn else f"#{target_id}"
     ctx.note(f"«Ремонтный набор»: +1 заряд «{name}»")
 
@@ -407,25 +434,33 @@ def _time_rings(ctx: EffectContext, user: User) -> None:
     if _has_mod(partner.id, "time_ring_partner"):
         ctx.note(f"У {partner.username} уже есть связь колец")
         return
+    from backend.items.inventory import effect_duration_turns
+
+    turns = effect_duration_turns(11)
     _add_mod(
         user.id,
         "time_ring_partner",
         str(partner.id),
-        1,
+        turns,
         item_id=11,
-        label="Кольца времени",
+        label="Парные кольца времени",
+        desc=f"+1 к броску · {turns} раз",
         polarity="buff",
     )
     _add_mod(
         partner.id,
         "time_ring_partner",
         str(user.id),
-        1,
+        turns,
         item_id=11,
-        label="Кольца времени",
+        label="Парные кольца времени",
+        desc=f"+1 к броску · {turns} раз",
         polarity="buff",
     )
-    ctx.note(f"«Парные кольца времени» с {partner.username}: +1 к броску")
+    ctx.note(
+        f"«Парные кольца времени» с {partner.username}: "
+        f"+1 к броску, по {turns} раза каждому"
+    )
 
 
 def _resolve_target(ctx: EffectContext) -> User | None:
@@ -447,13 +482,12 @@ def _resolve_target(ctx: EffectContext) -> User | None:
     return t
 
 
-# Дебафф-предметы в инвентаре, которые сразу дают эффект (без списания заряда)
+# Дебафф-предметы в инвентаре, которые сразу дают эффект (заряд остаётся в инвентаре)
 _AUTO_ACTIVATE_DEBUFF_KEYS = frozenset(
     {
         "huubik_dice",
         "rambo_band",
         "reverse_boots",
-        "explosives",
         "dice_penalty_next",
     }
 )
@@ -475,6 +509,8 @@ def grant_item_to_player(
     *,
     is_trap: bool = False,
     auto_activate_debuff: bool = True,
+    source: str = "выдача",
+    log_receive: bool = True,
 ) -> list[str]:
     """Выдать предмет в инвентарь; дебафф-предметы сразу активируют эффект (заряд не тратится)."""
     notes: list[str] = []
@@ -482,29 +518,73 @@ def grant_item_to_player(
     if not item:
         return notes
     if quantity is None:
-        quantity = _charges(item)
+        quantity = 1
     if item.kind == "trap":
         is_trap = True
-    notes.extend(inv.grant_inventory_item(user.id, item_id, quantity, is_trap=is_trap))
+    notes.extend(
+        inv.grant_inventory_item(
+            user.id, item_id, quantity, is_trap=is_trap
+        )
+    )
+    if log_receive and item.kind in ("item", "trap"):
+        inv.log_item_received(
+            user.id,
+            item,
+            quantity=quantity,
+            source=source,
+            extra_notes=[n for n in notes if "уничтожили" in n],
+        )
     if item.kind == "trap":
         notes.append(f"Ловушка «{item.name}» → инвентарь")
         return notes
+    if item.kind == "none" or item.instant:
+        ctx = EffectContext(
+            user_id=user.id,
+            item=item,
+            actor_username=user.username,
+        )
+        apply_item_effect(ctx, user, db)
+        notes.extend(ctx.factors)
+        if log_receive:
+            inv.log_item_received(
+                user.id,
+                item,
+                quantity=quantity,
+                source=source,
+            )
+        return notes
     if item.kind == "item":
-        notes.append(f"«{item.name}» → инвентарь ({quantity} зар.)")
+        notes.append(f"«{item.name}» → инвентарь (×{quantity}, {quantity * _charges(item)} зар.)")
         if auto_activate_debuff and _should_auto_activate_debuff(item):
+            if not inv.has_item(user.id, item_id):
+                return notes
+            from backend.items.gameplay import CHARGE_BUFF_ACTIVATE
+
             ctx = EffectContext(
                 user_id=user.id,
                 item=item,
                 actor_username=user.username,
             )
-            apply_item_effect(ctx, user, db)
+            key, _ = _key_val(item.effect)
+            if key in CHARGE_BUFF_ACTIVATE:
+                _activate_charge_buff(ctx, user, pending_inventory_charge=True)
+            elif key.endswith("_dice") or key == "huubik_dice":
+                apply_item_effect(ctx, user, db)
+            else:
+                apply_item_effect(ctx, user, db)
             notes.extend(ctx.factors)
-            notes.append(f"«{item.name}»: эффект активирован (заряд в инвентаре)")
+            notes.append(f"«{item.name}»: в инвентаре + активный эффект")
     return notes
 
 
 def apply_on_wheel_land(ctx: EffectContext, user: User, db_sess) -> None:
     item = ctx.item
+
+    if item.id in WHEEL_DROP_INSTANT_IDS:
+        from backend.items.instant import apply_instant_wheel_effect
+
+        apply_instant_wheel_effect(ctx, user)
+        return
     if item.instant or item.kind == "none":
         apply_item_effect(ctx, user, db_sess)
         return
@@ -515,7 +595,9 @@ def apply_on_wheel_land(ctx: EffectContext, user: User, db_sess) -> None:
             ctx.note(n)
         return
     if item.kind == "item":
-        for n in grant_item_to_player(user, item.id):
+        for n in grant_item_to_player(
+            user, item.id, source="колесо приколов", log_receive=False
+        ):
             ctx.note(n)
         return
     ctx.note(f"«{item.name}» (тип {item.kind})")

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import { playerName } from "../playerName";
 
 async function adminPatch(path, body) {
   const r = await fetch(`/api/admin${path}`, {
@@ -61,7 +62,8 @@ export default function AdminPanel({ onClose }) {
     setMoveCell(String(p.position ?? 0));
     const data = await apiGet(`/players/${p.id}`);
     setGames(data.games);
-    setGameForm(null);
+    const active = (data.games || []).find((g) => g.status === "active");
+    setGameForm(active ? { ...active } : null);
   };
 
   const saveUser = async () => {
@@ -159,7 +161,7 @@ export default function AdminPanel({ onClose }) {
                       className={selected?.id === p.id ? "active" : ""}
                       onClick={() => pickPlayer(p)}
                     >
-                      {p.username} ({p.points}⚡) · кл.{p.position}
+                      {playerName(p)} ({p.points}⚡) · кл.{p.position}
                     </button>
                   </li>
                 ))}
@@ -167,7 +169,8 @@ export default function AdminPanel({ onClose }) {
             </div>
             {selected && (
               <div className="admin-editor">
-                <h3>{selected.username}</h3>
+                <h3>{playerName(selected)}</h3>
+                <p className="muted">Логин: {selected.username}</p>
 
                 <div className="admin-block">
                   <h4>Перемещение</h4>
@@ -330,29 +333,45 @@ export default function AdminPanel({ onClose }) {
                 <ul className="admin-game-list">
                   {games.map((g) => (
                     <li key={g.id}>
-                      <button type="button" onClick={() => pickGame(g)}>
+                      <button
+                        type="button"
+                        className={
+                          gameForm?.id === g.id
+                            ? "active"
+                            : g.status === "active"
+                              ? "active-game"
+                              : g.status === "pending_admin"
+                                ? "pending-admin-game"
+                                : ""
+                        }
+                        onClick={() => pickGame(g)}
+                      >
                         {g.title} [{g.status}]
+                        {g.status === "active" ? " · текущая" : ""}
+                        {g.status === "pending_admin" ? " · назначит админ" : ""}
                       </button>
                     </li>
                   ))}
                 </ul>
                 {gameForm && (
                   <div className="admin-game-form">
-                    <h4>Редактирование игры</h4>
+                    <h4>
+                      {gameForm.status === "active"
+                        ? "Текущая игра"
+                        : "Редактирование игры"}
+                    </h4>
                     {[
-                      "title",
-                      "status",
-                      "cell_name",
-                      "dice_roll",
-                      "review",
-                      "rating",
-                      "points_earned",
-                      "hltb_hours",
-                      "judge_hours",
-                      "play_seconds",
-                    ].map((key) => (
+                      ["title", "Название"],
+                      ["status", "Статус"],
+                      ["cell_name", "Клетка"],
+                      ["dice_roll", "Кубик"],
+                      ["review", "Отзыв"],
+                      ["rating", "Оценка"],
+                      ["points_earned", "Очки за игру"],
+                      ["play_seconds", "Секунд в игре"],
+                    ].map(([key, label]) => (
                       <label key={key}>
-                        {key}
+                        {label}
                         <input
                           className="input"
                           value={gameForm[key] ?? ""}
@@ -365,6 +384,45 @@ export default function AdminPanel({ onClose }) {
                         />
                       </label>
                     ))}
+                    <label>
+                      HLTB (часы, вручную если не подтянулось)
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        placeholder="например 12.5"
+                        value={gameForm.hltb_hours ?? ""}
+                        onChange={(e) =>
+                          setGameForm({
+                            ...gameForm,
+                            hltb_hours:
+                              e.target.value === ""
+                                ? null
+                                : parseFloat(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Время судьи (часы)
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={gameForm.judge_hours ?? ""}
+                        onChange={(e) =>
+                          setGameForm({
+                            ...gameForm,
+                            judge_hours:
+                              e.target.value === ""
+                                ? null
+                                : parseFloat(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
                     <button
                       type="button"
                       className="btn primary"

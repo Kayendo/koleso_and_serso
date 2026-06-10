@@ -1,3 +1,5 @@
+import { playerName } from "../playerName";
+
 export default function PlayerList({ players, currentUser, onSelect }) {
   const sorted = [...players].sort((a, b) => b.points - a.points);
   return (
@@ -12,7 +14,7 @@ export default function PlayerList({ players, currentUser, onSelect }) {
           >
             <img src={p.avatarUrl} alt="" className="avatar-sm" />
             <div className="player-meta">
-              <span className="name">{p.username}</span>
+              <span className="name">{playerName(p)}</span>
               <span className="status">
                 {p.turnPhase === "playing"
                   ? "В игре"

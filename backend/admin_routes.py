@@ -180,6 +180,7 @@ def admin_grant_item(user_id: int):
         qty,
         is_trap=item.kind == "trap",
         auto_activate_debuff=bool(data.get("autoActivate", True)),
+        source="админ",
     )
     return jsonify(
         {
@@ -326,5 +327,19 @@ def admin_patch_game(game_id: int):
                 setattr(game, key, typ(val) if typ is not bool else bool(val))
     if data.get("status") in ("completed", "dropped") and not game.finished_at:
         game.finished_at = utcnow()
+    user = game.player
+    if data.get("status") == "active" and user:
+        from backend.items.gameplay import attach_gameplay_to_game
+        from backend.services.game_history import ensure_turn_phase_matches_ongoing_game
+        from backend.services.turn_service import _schedule_hltb_lookup
+
+        if not game._parse_gameplay_tags():
+            attach_gameplay_to_game(game, user)
+        if game.hltb_hours is None and game.title:
+            _schedule_hltb_lookup(game.id, game.title)
+        ensure_turn_phase_matches_ongoing_game(user)
     db.session.commit()
-    return jsonify(game.to_dict())
+    payload = game.to_dict()
+    if user:
+        payload["user"] = user.to_public_dict()
+    return jsonify(payload)

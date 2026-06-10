@@ -82,6 +82,12 @@ def cell_game_source(cell_id: int) -> dict[str, Any]:
     if cell.cell_type == "trap_joy":
         result["itemWheel"] = True
         return result
+    if cell.cell_type == "start":
+        result["startReroll"] = True
+        return result
+    if cell.cell_type == "durka":
+        result["durkaCell"] = True
+        return result
     if cell.company_key == "blazerd":
         result["needsGenrePick"] = True
         return result

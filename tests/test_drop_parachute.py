@@ -1,10 +1,9 @@
 """Дроп с парашютом: история, дебафф без очков, клетка «?»."""
 
-import math
-
 from backend.items.drop import handle_drop
+from backend.items.inventory import tick_modifiers_after_turn
 from backend.items.modifiers import apply_completion_points
-from backend.models import PlayerGame, TurnLog, User, db
+from backend.models import TurnLog
 from backend.services.scoring import points_for_completion
 from backend.services.turn_service import create_player_game
 
@@ -18,6 +17,8 @@ def test_parachute_drop_keeps_no_points_debuff(app):
         grant_item(u.id, 17)
         game = create_player_game(u, "Drop Test", u.position, "2+2", is_question=False)
         u.turn_phase = "playing"
+        from backend.models import db
+
         db.session.commit()
 
         factors = handle_drop(u, game, on_durka_cell=False, use_toilet=False)
@@ -28,13 +29,20 @@ def test_parachute_drop_keeps_no_points_debuff(app):
         assert logs
         assert "Дроп" in logs[0].summary
 
+        tick_modifiers_after_turn(u.id)
+        assert "no_points_next_game" in mod_keys(u.id)
+
+        game2 = create_player_game(u, "Next", u.position, "3+3", is_question=False)
+        attach_tags = game2._parse_gameplay_tags()
+        assert any(t.get("key") == "no_points_next_game" for t in attach_tags)
+
         base = points_for_completion(10.0, None, is_question=False)
-        earn = apply_completion_points(u, game, base, [])
+        earn = apply_completion_points(u, game2, base, [])
         assert earn == 0
         assert "no_points_next_game" not in mod_keys(u.id)
 
 
-def test_parachute_penalty_question_cell(app):
+def test_parachute_penalty_fixed_on_question_cell(app):
     with app.app_context():
         u = player("andryuha")
         reset_player(u)
@@ -44,9 +52,10 @@ def test_parachute_penalty_question_cell(app):
             u, "Q Drop", u.position, "2+2", is_question=True
         )
         u.turn_phase = "playing"
+        from backend.models import db
+
         db.session.commit()
 
         handle_drop(u, game, on_durka_cell=False, use_toilet=False)
-        expected_penalty = math.ceil(2 * 1.5)
         u = player("andryuha")
-        assert u.points == 10 - expected_penalty
+        assert u.points == 8

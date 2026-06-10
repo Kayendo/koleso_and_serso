@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from backend.board import START_CELL_ID
 from backend.items import inventory as inv
 from backend.items.catalog import get_item
@@ -54,10 +56,13 @@ def _consume_mod(mod: PlayerModifier) -> None:
 
 
 def count_inventory_debuffs(user_id: int) -> int:
+    from backend.items.inventory import _ensure_charges
+
     n = 0
     for row in PlayerInventoryItem.query.filter_by(user_id=user_id).all():
         defn = get_item(row.item_def_id)
-        if defn and defn.polarity == "debuff" and row.quantity > 0:
+        _ensure_charges(row)
+        if defn and defn.polarity == "debuff" and row.charges_remaining > 0:
             n += row.quantity
     return n
 
@@ -106,6 +111,10 @@ def apply_dice_roll(
     if rev:
         die = randint(1, 6)
         _consume_mod(rev)
+        if rev.effect_value == "pending_charge" and rev.source_item_id:
+            from backend.items.inventory import consume_inventory_item
+
+            consume_inventory_item(user.id, rev.source_item_id)
         factors.append(f"«Реверсивные сапоги»: 1 кубик={die}, назад")
         return die, 0, die, str(die), {"backward": True, "one_die": True, "rawDice": [die, 0]}, factors
 
@@ -151,31 +160,21 @@ def apply_dice_roll(
         steps = d1 + d2
         label = f"{d1}+{d2}"
         factors.append("«Кубик хуюбика»: больший → 1")
+        from backend.items.inventory import consume_inventory_item
+
+        consume_inventory_item(user.id, 2)
 
     for key, delta, lbl in (
         ("trap_rake", -1, "Грабли"),
-        ("trap_slime", -1, "Липкая жижа"),
         ("trap_rat", -3, "Крыса"),
         ("dice_penalty_next", -1, "Штраф к броску"),
         ("help_laggard", None, "Помощь отстающему"),
-        ("lucky_loser", None, "Удачный неудачник"),
-        ("coin_dice", None, "Орел или решка"),
         ("dice_bonus_next", None, "Бонус к броску"),
     ):
         m = _has_mod(user.id, key)
         if not m:
             continue
         if key == "help_laggard":
-            d = int(m.effect_value or "0")
-        elif key == "lucky_loser":
-            d = count_inventory_debuffs(user.id)
-            if d >= 5:
-                user.points += 1
-                factors.append("«Удачный неудачник»: +1 очко")
-            if d == 0:
-                _consume_mod(m)
-                continue
-        elif key == "coin_dice":
             d = int(m.effect_value or "0")
         elif key == "dice_bonus_next":
             d = abs(int(m.effect_value or "1"))
@@ -199,30 +198,11 @@ def apply_dice_roll(
         steps += 1
         label = f"{d1}+{d2}→{steps}"
         factors.append("«Парные кольца времени»: +1 к ходу")
-        inv_row = PlayerInventoryItem.query.filter_by(
-            user_id=user.id, item_def_id=11
-        ).first()
-        if inv_row and inv_row.quantity > 0:
-            inv_row.quantity -= 1
-            if inv_row.quantity <= 0:
-                db.session.delete(inv_row)
-                db.session.delete(ring)
-                partner_id = int(ring.effect_value or "0")
-                partner_ring = _has_mod(partner_id, "time_ring_partner")
-                if partner_ring:
-                    db.session.delete(partner_ring)
-                factors.append("«Парные кольца времени»: связь разорвана")
+        ring.turns_remaining -= 1
+        if ring.turns_remaining <= 0:
+            db.session.delete(ring)
+            factors.append("«Парные кольца времени»: связь закончилась")
         db.session.commit()
-
-    if d1 == d2:
-        nb = PlayerInventoryItem.query.filter_by(user_id=user.id, item_def_id=21).first()
-        if nb and nb.quantity > 0:
-            if d1 == 6:
-                user.points += 1
-                factors.append("«Плюсовый блокнот»: две 6 → +1 очко")
-            else:
-                steps += 2
-                factors.append("«Плюсовый блокнот»: дубль → +2 к ходу")
 
     db.session.commit()
     return d1, d2, steps, label, meta, factors
@@ -265,7 +245,7 @@ def apply_completion_points(
     base: int,
     factors: list[str] | None = None,
 ) -> int:
-    from backend.services.scoring import points_for_completion
+    from backend.services.scoring import points_for_completion, points_for_hurry, points_for_totem
 
     factors = factors or []
     pts = base
@@ -277,26 +257,43 @@ def apply_completion_points(
         pts = points_for_completion(None, None, bool(game.is_question))
         factors.append("«УВЫ»: только базовые очки (без HLTB)")
     elif _has_mod(user.id, "totem_moshnya") or _game_has_tag(game, "totem_moshnya"):
-        pts = 3
-        factors.append("«Тотем мошны»")
+        from backend.services.scoring import _hours_ceiled
+
+        pts = points_for_totem(
+            game.hltb_hours,
+            game.judge_hours,
+            bool(game.is_question),
+        )
+        h = _hours_ceiled(game.hltb_hours, game.judge_hours)
+        if h is None:
+            factors.append("«Тотем мошны»: 3 очка")
+        else:
+            bonus = pts - 3
+            factors.append(f"«Тотем мошны»: 3 + {bonus} за HLTB")
     elif _has_mod(user.id, "hurry") or _game_has_tag(game, "hurry"):
-        pts = 1
+        pts = points_for_hurry(
+            game.hltb_hours,
+            game.judge_hours,
+            bool(game.is_question),
+        )
         factors.append("«Торопыга»")
     elif _has_mod(user.id, "hour_growth") or _game_has_tag(game, "hour_growth"):
-        h = game.hltb_hours or game.judge_hours
-        if h:
-            pts = max(1, 2 * int(float(h) // 10))
-        factors.append("«Часовой рост»")
+        from backend.services.scoring import _hours_ceiled
+
+        h = _hours_ceiled(game.hltb_hours, game.judge_hours)
+        if h is not None:
+            blocks = math.ceil(h / 10)
+            pts = 2 + 2 * blocks
+        else:
+            pts = 2
+        factors.append(f"«Часовой рост»: {pts} очк.")
 
     m = _has_mod(user.id, "no_points_next_game")
-    if m:
+    if m or _game_has_tag(game, "no_points_next_game"):
         pts = 0
-        _consume_mod(m)
+        if m:
+            _consume_mod(m)
         factors.append("«Дырявый парашют»: без очков за эту игру")
-
-    easy = _has_mod(user.id, "four_leaf_easy")
-    if easy:
-        factors.append(f"«Клевер»: игра на лёгкой сложности ({easy.description})")
 
     bonus = _has_mod(user.id, "points_bonus_next")
     if bonus:

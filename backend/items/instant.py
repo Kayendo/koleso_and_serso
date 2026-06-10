@@ -10,45 +10,81 @@ from backend.models import PlayerInventoryItem, PlayerModifier, User, db
 from backend.random_utils import choice, randbelow
 
 
+def _maybe_set_wheel_ready(user: User) -> None:
+    if user.turn_phase != "playing":
+        user.turn_phase = "wheel_ready"
+
+
 def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
     key = ctx.item.effect.split(":")[0] if ctx.item.effect else ""
     name = ctx.item.name
 
     if key == "wheel_reroll":
-        ctx.note("«Интрига»: реролл колеса — откройте колесо снова")
-        user.turn_phase = "wheel_ready"
+        from backend.items.wheel_extras import add_extra_wheel_spins
+
+        add_extra_wheel_spins(user.id, 1, label="Интрига")
+        ctx.note("«Интрига»: +1 прокрут колеса приколов")
         db.session.commit()
         return
 
     if key == "two_for_one":
-        ctx.note("«Два по цене одного»: примените верхний и нижний соседние пункты (вручную)")
-        user.turn_phase = "wheel_ready"
+        from backend.items.wheel_extras import add_extra_wheel_spins, prepare_extra_wheel_turn
+        from backend.pending_wheels import set_two_for_one
+
+        add_extra_wheel_spins(user.id, 1, label="Два по цене одного")
+        set_two_for_one(user.id)
+        prepare_extra_wheel_turn(user)
+        ctx.note(
+            "«Два по цене одного»: +1 прокрут; на рerolle засчитаются сектора сверху и снизу"
+        )
         db.session.commit()
         return
 
     if key in ("shop_chat", "shop_leprechaun"):
-        ctx.note(f"«{name}»: выбор соседей/голосование — зафиксируйте вручную")
-        return
+        from backend.items.wheel_extras import add_extra_wheel_spins, prepare_extra_wheel_turn
+        from backend.pending_wheels import set_shop_repick
 
-    if key == "oops_neighbor":
-        ctx.note(
-            "«Ой, извините»: пункт недоступен — при подтверждении колеса выберите соседний сектор"
+        mode = "chat" if key == "shop_chat" else "leprechaun"
+        add_extra_wheel_spins(user.id, 1, label=name)
+        set_shop_repick(user.id, mode, effect_item_id=ctx.item.id)
+        prepare_extra_wheel_turn(user)
+        hint = (
+            "чат голосует между 5 секторами"
+            if mode == "chat"
+            else "выберите 2 сектора из 5"
         )
+        ctx.note(
+            f"«{name}»: +1 прокрут колеса приколов; на rerolle {hint}; "
+            "предметы выдаёт админ"
+        )
+        db.session.commit()
         return
 
     if key == "wheel_extra":
         n = int(ctx.item.effect.split(":")[1] or "1")
-        _add_mod(user.id, "wheel_extra_spins", str(n), n, label=name)
-        ctx.note(f"«{name}»: +{n} прокрут(а) колеса")
+        from backend.items.wheel_extras import add_extra_wheel_spins
+
+        add_extra_wheel_spins(user.id, n, label=name)
+        if n > 0:
+            _maybe_set_wheel_ready(user)
+        db.session.commit()
+        ctx.note(f"«{name}»: +{n} доп. колёс приколов")
         return
 
     if key == "bandit":
         rows = PlayerInventoryItem.query.filter_by(user_id=user.id).all()
         count = sum(r.quantity for r in rows)
+        phase = user.turn_phase
         PlayerInventoryItem.query.filter_by(user_id=user.id).delete()
         db.session.commit()
-        ctx.note(f"«Однорукий бандит»: сброшено {count} предметов → {count} колёс")
-        _add_mod(user.id, "wheel_extra_spins", str(count), count, label="Бандит")
+        from backend.items.wheel_extras import add_extra_wheel_spins, prepare_extra_wheel_turn
+
+        add_extra_wheel_spins(user.id, count, label="Однорукий бандит")
+        prepare_extra_wheel_turn(user)
+        db.session.commit()
+        ctx.note(
+            f"«Однорукий бандит»: сброшено {count} предметов → {count} доп. колёс"
+        )
         return
 
     if key == "dirtykin":
@@ -69,43 +105,6 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
             return
         user.position, other.position = other.position, user.position
         ctx.note(f"«Рокировочка» с {other.username}")
-        db.session.commit()
-        return
-
-    if key == "first_aid":
-        mode = ctx.options.get("mode")
-        if mode == "drop_debuff":
-            from backend.items.gameplay import PROTECTED_DEBUFF_KEYS
-
-            mods = [
-                m
-                for m in PlayerModifier.query.filter_by(
-                    user_id=user.id, polarity="debuff"
-                ).all()
-                if m.effect_key not in PROTECTED_DEBUFF_KEYS
-            ]
-            if mods:
-                db.session.delete(mods[0])
-                user.points = max(0, user.points - 1)
-                ctx.note("Аптечка: сброшен дебафф, −1 очко")
-            else:
-                ctx.note("Нет дебаффа для сброса")
-        elif mode == "drop_buff":
-            mods = PlayerModifier.query.filter_by(
-                user_id=user.id, polarity="buff"
-            ).all()
-            if mods:
-                db.session.delete(mods[0])
-                user.points += 1
-                ctx.note("Аптечка: сброшен бафф, +1 очко")
-            else:
-                buff_row = PlayerInventoryItem.query.filter_by(user_id=user.id).first()
-                if buff_row:
-                    inv.consume_inventory_item(user.id, buff_row.item_def_id)
-                    user.points += 1
-                    ctx.note("Аптечка: сброшен предмет-бафф, +1 очко")
-        else:
-            ctx.note("«Аптечка»: выберите режим (drop_debuff / drop_buff)")
         db.session.commit()
         return
 
@@ -149,19 +148,6 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         db.session.commit()
         return
 
-    if key == "lucky_loser":
-        n = count_inventory_debuffs(user.id)
-        _add_mod(
-            user.id,
-            "lucky_loser",
-            str(n),
-            1,
-            item_id=35,
-            label="Удачный неудачник",
-        )
-        ctx.note(f"«Удачный неудачник»: +{n} к броску за дебаффы")
-        return
-
     if key == "hurry":
         _add_mod(user.id, "hurry", "1", 1, item_id=36, label="Торопыга", polarity="debuff")
         ctx.note("«Торопыга»: след. клетка — 1 базовый поинт")
@@ -177,44 +163,6 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
             label="Бог любит троицу",
         )
         ctx.note("«Бог любит троицу»: на след. ход 3 кубика")
-        return
-
-    if key == "coin_dice":
-        side = ctx.options.get("side") or ("орёл" if randbelow(2) else "решка")
-        delta = 2 if side in ("орёл", "heads", "+") else -2
-        _add_mod(
-            user.id,
-            "coin_dice",
-            str(delta),
-            1,
-            item_id=38,
-            label="Орел или решка",
-        )
-        ctx.note(f"«Орел или решка»: {side} → {delta:+d} к броску")
-        return
-
-    if key == "where_am_i":
-        players = User.query.filter(
-            User.is_player == True, User.id != user.id
-        ).all()
-        if not players:
-            return
-        other = choice(players)
-        cell = BOARD_BY_ID.get(other.position)
-        cid = other.position
-        even_or_corner = cid % 2 == 0 or cid in (0, 10, 20, 30)
-        if even_or_corner:
-            other.points += 1
-            ctx.note(f"«А где это я?»: {other.username} +1 (чётная/угловая)")
-        else:
-            other.points = max(0, other.points - 1)
-            ctx.note(f"«А где это я?»: {other.username} −1")
-        db.session.commit()
-        return
-
-    if key in ("chat_law", "i_am_law"):
-        ctx.note(f"«{name}»: выбор категории/игры — следующий ход вручную")
-        _add_mod(user.id, key, "1", 1, item_id=ctx.item.id, label=name)
         return
 
     if key == "base_only_next":

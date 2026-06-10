@@ -8,6 +8,7 @@ from backend.models import User, db
 from backend.turn_actions import (
     confirm_wheel_for_user,
     durka_roll_for_user,
+    durka_step_for_user,
     open_wheel_for_user,
     roll_dice_for_user,
     spin_wheel_for_user,
@@ -32,6 +33,16 @@ def register_socket_handlers(socketio):
             return emit("error", {"message": "Войдите в аккаунт"})
         user = db.session.get(User, current_user.id)
         result = durka_roll_for_user(user)
+        if isinstance(result, tuple):
+            emit("error", result[0])
+
+    @socketio.on("durka_step")
+    def durka_step(data):
+        if not current_user.is_authenticated:
+            return emit("error", {"message": "Войдите в аккаунт"})
+        user = db.session.get(User, current_user.id)
+        data = data or {}
+        result = durka_step_for_user(user, data.get("direction"))
         if isinstance(result, tuple):
             emit("error", result[0])
 

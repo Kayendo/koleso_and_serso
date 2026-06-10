@@ -7,7 +7,8 @@ export const PHASE_LABELS = {
   wheel: "Вращение колеса",
   playing: "Прохождение игры",
   reward_items: "Награда: крутите колёса предметов",
-  durka: "Дурка — ролл игры",
+  durka: "Дурка — ролл игры (после дропа)",
+  durka_choice: "Дурка — выберите направление",
 };
 
 export function phaseLabel(phase) {

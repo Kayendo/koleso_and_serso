@@ -8,4 +8,5 @@ howlongtobeatpy>=1.0.21
 werkzeug>=3.0.0
 python-dotenv>=1.0.0
 edge-tts>=6.1.12
+openpyxl>=3.1.0
 pytest>=8.0.0

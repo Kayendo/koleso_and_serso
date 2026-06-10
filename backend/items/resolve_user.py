@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sqlalchemy import or_
+
 from backend.models import User
 
 
@@ -21,7 +23,12 @@ def resolve_user_id(
     if not name:
         return None, None
 
-    u = User.query.filter(User.username.ilike(name)).first()
+    u = User.query.filter(
+        or_(
+            User.username.ilike(name),
+            User.display_name.ilike(name),
+        )
+    ).first()
     if not u:
         return None, f"Игрок «{name}» не найден"
     return u.id, None
