@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cd .. && .venv\\Scripts\\python.exe -m pytest tests/ -q --tb=short",
+    "build": "vite build",
+    "build:check": "vite build && cd .. && python -m pytest tests/ -q --tb=short",
+    "build:win": "vite build && cd .. && .venv\\Scripts\\python.exe -m pytest tests/ -q --tb=short",
     "preview": "vite preview"
   },
   "dependencies": {

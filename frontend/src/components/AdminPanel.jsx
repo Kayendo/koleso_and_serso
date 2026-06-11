@@ -137,6 +137,18 @@ export default function AdminPanel({ onClose }) {
     setGames(data.games);
   };
 
+  const reloadData = async () => {
+    try {
+      const res = await adminPost("/reload-data", {});
+      setMsg(
+        `data/ перечитана: предметов ${res.items}, GIF в пуле ${res.gifPoolSize}. ${res.note || ""}`
+      );
+      apiGet("/admin/items").then(setItems).catch(() => {});
+    } catch (ex) {
+      setMsg(ex.message);
+    }
+  };
+
   return (
     <div className="overlay overlay--casino" onClick={onClose}>
       <div
@@ -145,6 +157,9 @@ export default function AdminPanel({ onClose }) {
       >
         <header>
           <h2>Админ-панель</h2>
+          <button type="button" className="btn btn-sm" onClick={reloadData}>
+            Перечитать data/
+          </button>
           <button type="button" className="close" onClick={onClose}>
             ×
           </button>

@@ -39,6 +39,11 @@ cd frontend && npm run dev
 
 Откройте http://127.0.0.1:5173 (прокси на API) или http://127.0.0.1:5000 после `npm run build`.
 
+## Деплой в интернет
+
+Пошаговая инструкция: **[DEPLOY.md](DEPLOY.md)**  
+Скрипт установки на Ubuntu VPS: `sudo bash deploy/install.sh`
+
 ## Списки игр (редактируйте вручную)
 
 | Файл | Назначение |

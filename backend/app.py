@@ -8,7 +8,7 @@ from flask_cors import CORS
 from flask_login import LoginManager
 from flask_socketio import SocketIO
 
-from backend.config import BASE_DIR, UPLOAD_DIR
+from backend.config import BASE_DIR, UPLOAD_DIR, cors_origins
 from backend.models import User, db
 from backend.admin_routes import admin_api
 from backend.routes import api
@@ -49,7 +49,7 @@ def create_app() -> Flask:
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.session_protection = "strong"
-    CORS(app, supports_credentials=True, origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5000", "http://localhost:5000"])
+    CORS(app, supports_credentials=True, origins=cors_origins())
     socketio.init_app(app)
     app.extensions["socketio"] = socketio
     app.register_blueprint(api, url_prefix="/api")

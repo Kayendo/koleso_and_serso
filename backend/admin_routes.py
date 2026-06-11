@@ -343,3 +343,11 @@ def admin_patch_game(game_id: int):
     if user:
         payload["user"] = user.to_public_dict()
     return jsonify(payload)
+
+
+@admin_api.route("/reload-data", methods=["POST"])
+@admin_required
+def admin_reload_data():
+    from backend.data_reload import reload_all_data
+
+    return jsonify(reload_all_data())

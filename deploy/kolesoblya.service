@@ -1,0 +1,16 @@
+[Unit]
+Description=Kolesoblya DOTAG3 game server
+After=network.target
+
+[Service]
+Type=simple
+User=kolesoblya
+Group=kolesoblya
+WorkingDirectory=/opt/kolesoblya
+EnvironmentFile=/opt/kolesoblya/.env
+ExecStart=/opt/kolesoblya/.venv/bin/python run.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

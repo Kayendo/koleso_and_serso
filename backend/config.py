@@ -20,7 +20,22 @@ DATABASE_URI = os.environ.get(
     "DATABASE_URI", f"sqlite:///{BASE_DIR / 'kolesoblya.db'}"
 )
 
+# Прод: ALLOWED_ORIGINS=https://dotag.example.com,http://123.45.67.89
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "")
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def cors_origins() -> list[str]:
+    raw = ALLOWED_ORIGINS.strip()
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5000",
+        "http://localhost:5000",
+    ]
 
 GENRE_FILES = {
     1: DATA_DIR / "genre_1_puzzle.txt",

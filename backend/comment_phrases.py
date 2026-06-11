@@ -187,3 +187,10 @@ def pick_line(target: str, player: dict) -> str:
     if line:
         _recent.append(line)
     return line or f"{target}, крути колесо дальше."
+
+
+def reload_phrases() -> None:
+    """Сброс кэша фраз (после правки ai_comment_phrases*.jsonl)."""
+    global _rows, _by_tag
+    _rows = None
+    _by_tag = None
