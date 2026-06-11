@@ -21,9 +21,10 @@ export default function DiceTableSpectacle({
   compact = false,
   physicsRoll = false,
   rollKey = 0,
+  diceCount: diceCountProp = 2,
   onPhysicsConfirmed,
 }) {
-  const count = Math.max(1, finalValues?.length || 2);
+  const count = Math.max(1, diceCountProp || finalValues?.length || 2);
   const [phase, setPhase] = useState(
     indefiniteRoll ? "rolling" : physicsRoll ? "rolling" : "result"
   );
@@ -63,9 +64,16 @@ export default function DiceTableSpectacle({
     if (physicsRoll) {
       try {
         const data = await apiPost("/turn/confirm-dice-physics", { dice: values });
+        onPhysicsConfirmed?.(data);
+        if (
+          data.awaitingCheat ||
+          data.awaitingTrinityPick ||
+          data.needsDiceChoice?.type === "trinity"
+        ) {
+          return;
+        }
         setDisplayValues(data.dice || values);
         setPhase("result");
-        onPhysicsConfirmed?.(data);
         if (!requireAccept && onRollComplete) {
           setTimeout(() => onRollComplete(), 400);
         }

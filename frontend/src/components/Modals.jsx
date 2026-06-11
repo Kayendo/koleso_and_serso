@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { apiGet, apiPatch, apiPost, apiUpload, downloadApiFile } from "../api";
 import { EVENT_NAME, EVENT_TAGLINE } from "../branding";
 import { playerName } from "../playerName";
+import { playerRankIndex, rankTitle, RANK_TITLES } from "../playerRanks";
 import InventoryModal from "./InventoryModal";
 import TurnHistoryModal from "./TurnHistoryModal";
 import PagedListFooter, { usePagedSlice } from "./PagedListFooter";
@@ -341,6 +342,9 @@ export function ProfileModal({
     ? formatPlaySeconds(active.playSeconds, active.timerRunning, active.timerStartedAt)
     : null;
 
+  const rankIndex = playerRankIndex(players, profile?.id);
+  const showRankBadge = rankIndex >= 0 && rankIndex < RANK_TITLES.length;
+
   const gameplayTags = (tags) => {
     if (!tags?.length) return null;
     return (
@@ -361,7 +365,14 @@ export function ProfileModal({
         <div className="profile-avatar-wrap">
           <img src={profile?.avatarUrl} alt="" className="avatar-lg avatar-lg--vip" />
           <span className="profile-vip-badge">VIP</span>
-          <span className="profile-high-roller">HIGH ROLLER</span>
+          {showRankBadge && (
+            <span
+              className={`profile-rank-tag profile-rank-tag--${rankIndex + 1}`}
+              title={RANK_TITLES[rankIndex].hint}
+            >
+              {rankTitle(rankIndex)}
+            </span>
+          )}
         </div>
         <div>
           {isOwner && editingName ? (

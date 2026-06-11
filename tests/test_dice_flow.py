@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from backend.items.gameplay import activate_buff_for_next_game
 from backend.items.inventory import grant_inventory_item
-from backend.items.modifiers import _has_mod
+from backend.items.modifiers import _has_mod, apply_dice_roll
 from backend.models import User, db
 from backend.turn_actions import (
     _pending_dice_choice,
+    confirm_dice_physics_for_user,
     confirm_dice_roll_for_user,
     roll_dice_for_user,
 )
@@ -24,8 +25,15 @@ def test_cheat_dice_roll_then_replace(app, player_client, actor, second_player):
         assert "cheat_dice_ready" in mod_keys(actor.id)
 
         result = roll_dice_for_user(actor, {})
-        assert "awaitingCheat" in result
+        assert result.get("awaitingPhysics") is True
+        assert "awaitingCheat" not in result
         assert "steps" not in result
+        assert actor.turn_phase == "rolling"
+
+        cheat_pending = confirm_dice_physics_for_user(actor, {"dice": [2, 3]})
+        assert cheat_pending.get("awaitingCheat") is True
+        assert cheat_pending["dice"] == [2, 3]
+        assert "steps" not in cheat_pending
         assert actor.turn_phase == "dice_choice"
         assert actor.id in _pending_dice_choice
 
@@ -33,6 +41,7 @@ def test_cheat_dice_roll_then_replace(app, player_client, actor, second_player):
             actor, {"cheatDie": 1, "cheatValue": 6}
         )
         assert "steps" in result2
+        assert result2["dice"] == [6, 3]
         assert _has_mod(actor.id, "cheat_dice_ready") is None
         _pending_dice_choice.pop(actor.id, None)
 
@@ -65,13 +74,58 @@ def test_trinity_requires_pick(app, actor):
             actor.id, "trinity_dice", item_id=37, label="Троица"
         )
         result = roll_dice_for_user(actor, {})
-        assert result.get("needsDiceChoice", {}).get("type") == "trinity"
-        assert "dice" not in result.get("needsDiceChoice", {})
+        assert result.get("awaitingPhysics") is True
+        assert result.get("diceCount") == 3
+        assert "steps" not in result
+        assert actor.turn_phase == "rolling"
+
+        tri_pending = confirm_dice_physics_for_user(actor, {"dice": [2, 4, 6]})
+        assert tri_pending.get("awaitingTrinityPick") is True
+        assert tri_pending["dice"] == [2, 4, 6]
+        assert "steps" not in tri_pending
+        assert actor.turn_phase == "dice_choice"
 
         from backend.turn_actions import reveal_trinity_dice_for_user
 
         revealed = reveal_trinity_dice_for_user(actor)
         assert len(revealed["dice"]) == 3
+
+        final = confirm_dice_roll_for_user(actor, {"trinityPick": [2, 4]})
+        assert "steps" in final
+        assert final["steps"] == 6
+        assert _has_mod(actor.id, "trinity_dice") is None
+
+
+def test_huubik_bigger_die_becomes_one(app, actor):
+    with app.app_context():
+        reset_player(actor)
+        activate_buff_for_next_game(
+            actor.id, "huubik_dice_ready", item_id=2, label="Хуюбик"
+        )
+        result = roll_dice_for_user(actor, {})
+        assert result.get("awaitingPhysics") is True
+
+        final = confirm_dice_physics_for_user(actor, {"dice": [5, 2]})
+        assert final["dice"] == [1, 2]
+        assert final["steps"] == 3
+        assert _has_mod(actor.id, "huubik_dice_ready") is None
+
+
+def test_huubik_not_applied_on_trinity_throw(app, actor):
+    with app.app_context():
+        reset_player(actor)
+        activate_buff_for_next_game(
+            actor.id, "trinity_dice", item_id=37, label="Троица"
+        )
+        activate_buff_for_next_game(
+            actor.id, "huubik_dice_ready", item_id=2, label="Хуюбик"
+        )
+        roll_dice_for_user(actor, {})
+        confirm_dice_physics_for_user(actor, {"dice": [5, 2, 1]})
+        final = confirm_dice_roll_for_user(actor, {"trinityPick": [5, 2]})
+        assert final["dice"] == [5, 2]
+        assert final["steps"] == 7
+        assert _has_mod(actor.id, "huubik_dice_ready") is not None
 
 
 def test_time_rings_link_by_partner_username(
@@ -107,8 +161,6 @@ def test_time_rings_partner_user_id(app, player_client, actor, second_player):
 
 def test_time_rings_adds_step(app, actor):
     with app.app_context():
-        from backend.items.modifiers import _has_mod, apply_dice_roll
-
         reset_player(actor)
         activate_buff_for_next_game(
             actor.id,

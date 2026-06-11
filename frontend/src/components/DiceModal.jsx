@@ -13,6 +13,7 @@ export default function DiceModal({
   physicsRoll = false,
   awaitingOthersRoll = false,
   rollKey = 0,
+  diceCount = 2,
   onDone,
   onPhysicsConfirmed,
 }) {
@@ -43,6 +44,7 @@ export default function DiceModal({
         <DiceTableSpectacle
           physicsRoll
           rollKey={rollKey}
+          diceCount={diceCount}
           actorUsername={actorUsername}
           requireAccept={requireAccept}
           onDone={onDone}

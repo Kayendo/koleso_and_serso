@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backend.config import BASE_DIR
+from backend.random_utils import shuffle
 
 NEWS_FILE = BASE_DIR / "data" / "casino_news.txt"
 
@@ -16,4 +17,4 @@ def load_news_items() -> list[str]:
         if not line or line.startswith("#"):
             continue
         lines.append(line)
-    return lines
+    return shuffle(lines) if lines else []

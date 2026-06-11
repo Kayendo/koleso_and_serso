@@ -147,7 +147,7 @@ def player(username: str) -> User:
     return u
 
 
-def complete_physics_roll(user: User, d1: int = 3, d2: int = 4, options=None):
+def complete_physics_roll(user: User, d1: int = 3, d2: int = 4, d3=None, options=None):
     """roll-dice → confirm-dice-physics (для тестов после физического броска)."""
     from backend.turn_actions import confirm_dice_physics_for_user, roll_dice_for_user
 
@@ -155,5 +155,6 @@ def complete_physics_roll(user: User, d1: int = 3, d2: int = 4, options=None):
     if isinstance(result, tuple):
         return result
     if result.get("awaitingPhysics"):
-        return confirm_dice_physics_for_user(user, {"dice": [d1, d2], **(options or {})})
+        dice = [d1, d2, d3] if d3 is not None else [d1, d2]
+        return confirm_dice_physics_for_user(user, {"dice": dice, **(options or {})})
     return result

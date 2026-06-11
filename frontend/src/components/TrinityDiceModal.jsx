@@ -2,20 +2,22 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiPost } from "../api";
 import Die3D from "./dice/Die3D";
-import DiceTableSpectacle from "./dice/DiceTableSpectacle";
 
-export default function TrinityDiceModal({ onClose, onDone }) {
-  const [phase, setPhase] = useState("rolling");
-  const [dice, setDice] = useState(null);
+export default function TrinityDiceModal({ onClose, onDone, initialDice = null }) {
+  const [dice, setDice] = useState(initialDice);
   const [picked, setPicked] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (initialDice?.length >= 3) {
+      setDice(initialDice);
+      return undefined;
+    }
     apiPost("/turn/reveal-trinity-dice", {})
       .then((data) => setDice(data.dice || [1, 1, 1]))
       .catch((ex) => setError(ex.message));
-  }, []);
+  }, [initialDice]);
 
   const toggle = (index) => {
     setPicked((prev) => {
@@ -39,27 +41,6 @@ export default function TrinityDiceModal({ onClose, onDone }) {
       setBusy(false);
     }
   };
-
-  if (phase === "rolling") {
-    return (
-      <motion.div
-        className="overlay overlay-spectate overlay--casino"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <DiceTableSpectacle
-          finalValues={dice || [1, 1, 1]}
-          actorUsername="Троица"
-          phaseLabel={dice ? "три кубика на сукне" : "бросаем три кубика…"}
-          indefiniteRoll={!dice}
-          autoRoll={!!dice}
-          onRollComplete={dice ? () => setPhase("pick") : undefined}
-          compact
-        />
-        {error && <p className="error dice-table-error">{error}</p>}
-      </motion.div>
-    );
-  }
 
   return (
     <motion.div

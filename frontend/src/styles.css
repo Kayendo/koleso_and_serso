@@ -106,9 +106,50 @@ body.has-custom-bg .scene-bg__mesh {
   overflow: hidden;
 }
 
+.scene-bg__video-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--bg-void);
+}
+
+.scene-bg__video-host,
+.scene-bg__video-host iframe {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100vw, 177.78vh);
+  height: max(100vh, 56.25vw);
+  transform: translate(-50%, -50%);
+  border: 0;
+  pointer-events: none;
+}
+
+.scene-bg__video-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(4, 3, 8, 0.35) 0%, rgba(4, 3, 8, 0.55) 100%),
+    radial-gradient(ellipse 80% 70% at 50% 45%, transparent 25%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+.scene-bg--video .scene-bg__mesh {
+  opacity: 0.18;
+}
+
+.scene-bg--video .scene-bg__orb {
+  opacity: 0.22;
+}
+
+.scene-bg--fallback .scene-bg__mesh {
+  opacity: 0.35;
+}
+
 .scene-bg__mesh {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
     radial-gradient(ellipse 80% 60% at 20% 10%, rgba(139, 124, 246, 0.14), transparent 55%),
     radial-gradient(ellipse 70% 50% at 85% 80%, rgba(62, 232, 168, 0.1), transparent 50%),

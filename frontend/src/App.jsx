@@ -38,6 +38,7 @@ export default function App() {
   const [diceSpectacle, setDiceSpectacle] = useState(null);
   const [diceChoice, setDiceChoice] = useState(null);
   const [trinityChoice, setTrinityChoice] = useState(false);
+  const [trinityDice, setTrinityDice] = useState(null);
   const [rewardSpins, setRewardSpins] = useState(0);
   const [rewardDiceRolled, setRewardDiceRolled] = useState(false);
   const [rewardSlotOpen, setRewardSlotOpen] = useState(false);
@@ -81,6 +82,26 @@ export default function App() {
     diceSpectacleRef.current = diceSpectacle;
   }, [diceSpectacle]);
 
+  const handlePostPhysicsChoice = useCallback((data) => {
+    if (data.awaitingCheat && data.dice) {
+      physicsResolvedRef.current = false;
+      awaitingDiceAcceptRef.current = false;
+      diceWaitRef.current = true;
+      setDiceSpectacle(null);
+      setDiceChoice({ type: "cheat", dice: data.dice });
+      return true;
+    }
+    if (data.awaitingTrinityPick || data.needsDiceChoice?.type === "trinity") {
+      physicsResolvedRef.current = false;
+      awaitingDiceAcceptRef.current = false;
+      diceWaitRef.current = true;
+      setDiceSpectacle(null);
+      setTrinityDice(data.dice || null);
+      setTrinityChoice(true);
+      return true;
+    }
+    return false;
+  }, []);
   const storePendingMove = useCallback((data) => {
     if (!data?.movePath?.length) return;
     pendingPathRef.current = {
@@ -236,10 +257,6 @@ export default function App() {
     diceWaitRef.current = false;
     physicsResolvedRef.current = false;
     setDiceSpectacle(null);
-    if (spec?.awaitingCheatChoice && myIdRef.current === spec.userId) {
-      setDiceChoice({ type: "cheat", dice: spec.dice });
-      return;
-    }
     if (pendingPathRef.current) {
       runPendingMove();
     } else {
@@ -274,7 +291,13 @@ export default function App() {
     const onDice = (p) => {
       const isMe = myIdRef.current === p.userId;
 
-      if (isMe && diceSpectacleRef.current?.physicsRoll && !p.awaitingPhysics) {
+      if (
+        isMe &&
+        diceSpectacleRef.current?.physicsRoll &&
+        !p.awaitingPhysics &&
+        !p.awaitingCheat &&
+        !p.awaitingTrinityPick
+      ) {
         return;
       }
 
@@ -300,6 +323,7 @@ export default function App() {
             userId: p.userId,
             physicsRoll: true,
             showEffects: true,
+            diceCount: p.diceCount || 2,
             rollKey: diceRollKeyRef.current,
           });
         } else {
@@ -318,20 +342,21 @@ export default function App() {
         storePendingMoveRef.current?.(p);
       }
 
-      if (p.needsDiceChoice?.type === "trinity" && isMe) {
+      if (p.awaitingCheat && p.dice && isMe) {
+        setDiceSpectacle(null);
+        setDiceChoice({ type: "cheat", dice: p.dice });
+        return;
+      }
+
+      if ((p.awaitingTrinityPick || p.needsDiceChoice?.type === "trinity") && isMe) {
+        setDiceSpectacle(null);
+        setTrinityDice(p.dice || null);
         setTrinityChoice(true);
         setDiceChoice(null);
         return;
       }
 
       if (p.awaitingCheat && p.dice) {
-        setDiceSpectacle({
-          username: playerName(p),
-          dice: p.dice,
-          userId: p.userId,
-          showEffects: false,
-          awaitingCheatChoice: true,
-        });
         return;
       }
 
@@ -735,24 +760,14 @@ export default function App() {
       pendingPathRef.current = null;
       const data = await apiPost("/turn/roll-dice", {});
       if (data.user) syncPlayerState(data.user);
-      if (data.needsDiceChoice?.type === "trinity") {
-        setTrinityChoice(true);
-        setDiceChoice(null);
-      } else if (data.awaitingCheat && data.dice) {
-        setDiceSpectacle({
-          username: payloadPlayerName(data, currentUser),
-          dice: data.dice,
-          userId: data.userId || currentUser?.id,
-          showEffects: false,
-          awaitingCheatChoice: true,
-        });
-      } else if (data.awaitingPhysics) {
+      if (data.awaitingPhysics) {
         diceRollKeyRef.current += 1;
         setDiceSpectacle({
           username: payloadPlayerName(data, currentUser),
           userId: data.userId || currentUser?.id,
           physicsRoll: true,
           showEffects: true,
+          diceCount: data.diceCount || 2,
           rollKey: diceRollKeyRef.current,
         });
       } else if (data.steps != null && data.dice) {
@@ -1119,19 +1134,15 @@ export default function App() {
 
       {trinityChoice && (
         <TrinityDiceModal
+          initialDice={trinityDice}
           onClose={() => {}}
           onDone={(data) => {
             if (data.user) syncPlayerState(data.user);
             setTrinityChoice(false);
+            setTrinityDice(null);
             refreshPlayers();
             if (data.awaitingCheat && data.dice) {
-              setDiceSpectacle({
-                username: payloadPlayerName(data, currentUser),
-                dice: data.dice,
-                userId: data.userId,
-                showEffects: false,
-                awaitingCheatChoice: true,
-              });
+              setDiceChoice({ type: "cheat", dice: data.dice });
             } else if (data.steps != null && data.dice) {
               openDiceResult(data, payloadPlayerName(data, currentUser), {});
             }
@@ -1147,6 +1158,11 @@ export default function App() {
             if (data.user) syncPlayerState(data.user);
             setDiceChoice(null);
             refreshPlayers();
+            if (data.awaitingCheat && data.dice) {
+              setDiceChoice({ type: "cheat", dice: data.dice });
+            } else if (data.steps != null && data.dice) {
+              openDiceResult(data, payloadPlayerName(data, currentUser), {});
+            }
           }}
         />
       )}
@@ -1181,12 +1197,14 @@ export default function App() {
           physicsRoll={!!diceSpectacle.physicsRoll}
           awaitingOthersRoll={!!diceSpectacle.awaitingOthersRoll}
           rollKey={diceSpectacle.rollKey ?? 0}
+          diceCount={diceSpectacle.diceCount ?? 2}
           requireAccept={
             !diceSpectacle.awaitingOthersRoll &&
             currentUser?.id === diceSpectacle.userId
           }
           onDone={onDiceModalDone}
           onPhysicsConfirmed={(data) => {
+            if (handlePostPhysicsChoice(data)) return;
             physicsResolvedRef.current = true;
             awaitingDiceAcceptRef.current = true;
             diceWaitRef.current = true;

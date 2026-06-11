@@ -136,53 +136,13 @@ def roll_dice_for_user(user: User, options: dict | None = None) -> dict | tuple[
     )
 
     choice = dice_choice_needed(user, d1, d2, options)
-    if choice:
-        pending = {
-            "d1": d1,
-            "d2": d2,
-            "label": label,
-            **choice,
-        }
-        if choice.get("type") == "trinity":
-            from backend.random_utils import randint
-
-            d3 = randint(1, 6)
-            pending["dice"] = [d1, d2, d3]
-        _pending_dice_choice[user.id] = pending
-        user.turn_phase = "dice_choice"
-        db.session.commit()
-        emit_choice = {"type": choice["type"]} if choice.get("type") else choice
-        payload = {
-            **_user_payload(user),
-            "dice": [d1, d2],
-            "needsDiceChoice": emit_choice,
-            "user": user.to_public_dict(),
-        }
-        _emit("dice_rolled", payload)
-        return payload
-
-    if cheat_replacement_pending(user, options):
-        _pending_dice_choice[user.id] = {
-            "d1": d1,
-            "d2": d2,
-            "type": "cheat",
-            "dice": [d1, d2],
-        }
-        user.turn_phase = "dice_choice"
-        db.session.commit()
-        payload = {
-            **_user_payload(user),
-            "dice": [d1, d2],
-            "awaitingCheat": True,
-            "user": user.to_public_dict(),
-        }
-        _emit("dice_rolled", payload)
-        return payload
+    if choice and choice.get("type") == "trinity":
+        return _begin_physics_dice_roll(user, dice_count=3)
 
     return _begin_physics_dice_roll(user)
 
 
-def _begin_physics_dice_roll(user: User) -> dict:
+def _begin_physics_dice_roll(user: User, dice_count: int = 2) -> dict:
     """Ждём физический бросок на клиенте; движение — после confirm-dice-physics."""
     user.last_position = user.position
     user.turn_phase = "rolling"
@@ -190,7 +150,48 @@ def _begin_physics_dice_roll(user: User) -> dict:
     payload = {
         **_user_payload(user),
         "awaitingPhysics": True,
-        "diceCount": 2,
+        "diceCount": dice_count,
+        "user": user.to_public_dict(),
+    }
+    _emit("dice_rolled", payload)
+    payload["user"] = user.to_public_dict()
+    return payload
+
+
+def _defer_cheat_after_physics(user: User, d1: int, d2: int) -> dict:
+    _pending_dice_choice[user.id] = {
+        "d1": d1,
+        "d2": d2,
+        "type": "cheat",
+        "dice": [d1, d2],
+    }
+    user.turn_phase = "dice_choice"
+    db.session.commit()
+    payload = {
+        **_user_payload(user),
+        "dice": [d1, d2],
+        "awaitingCheat": True,
+        "user": user.to_public_dict(),
+    }
+    _emit("dice_rolled", payload)
+    payload["user"] = user.to_public_dict()
+    return payload
+
+
+def _defer_trinity_after_physics(user: User, d1: int, d2: int, d3: int) -> dict:
+    _pending_dice_choice[user.id] = {
+        "d1": d1,
+        "d2": d2,
+        "type": "trinity",
+        "dice": [d1, d2, d3],
+    }
+    user.turn_phase = "dice_choice"
+    db.session.commit()
+    payload = {
+        **_user_payload(user),
+        "dice": [d1, d2, d3],
+        "awaitingTrinityPick": True,
+        "needsDiceChoice": {"type": "trinity"},
         "user": user.to_public_dict(),
     }
     _emit("dice_rolled", payload)
@@ -201,12 +202,27 @@ def _begin_physics_dice_roll(user: User) -> dict:
 def confirm_dice_physics_for_user(
     user: User, data: dict | None = None
 ) -> dict | tuple[dict, int]:
+    from backend.items.modifiers import _has_mod, cheat_replacement_pending
+
     err = require_phase(user, "rolling")
     if err:
         return {"error": err}, 400
 
     data = data or {}
     dice = data.get("dice") or []
+
+    tri = _has_mod(user.id, "trinity_dice")
+    if tri:
+        if len(dice) < 3:
+            return {"error": "Нужны три значения кубиков"}, 400
+        try:
+            d1, d2, d3 = int(dice[0]), int(dice[1]), int(dice[2])
+        except (TypeError, ValueError):
+            return {"error": "Некорректные значения кубиков"}, 400
+        if not all(1 <= v <= 6 for v in (d1, d2, d3)):
+            return {"error": "Кубик должен быть от 1 до 6"}, 400
+        return _defer_trinity_after_physics(user, d1, d2, d3)
+
     if len(dice) < 2:
         return {"error": "Нужны два значения кубиков"}, 400
     try:
@@ -215,6 +231,9 @@ def confirm_dice_physics_for_user(
         return {"error": "Некорректные значения кубиков"}, 400
     if not (1 <= d1 <= 6 and 1 <= d2 <= 6):
         return {"error": "Кубик должен быть от 1 до 6"}, 400
+
+    if cheat_replacement_pending(user, {}):
+        return _defer_cheat_after_physics(user, d1, d2)
 
     return _finish_dice_roll(user, d1, d2, data)
 

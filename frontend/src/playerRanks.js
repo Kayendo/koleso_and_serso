@@ -17,3 +17,10 @@ export function rankClass(placeIndex) {
   if (n >= 1 && n <= 5) return `player-rank player-rank--${n}`;
   return "player-rank";
 }
+
+/** Индекс места в рейтинге по очкам (0 = первое место). */
+export function playerRankIndex(players, playerId) {
+  if (!playerId || !players?.length) return -1;
+  const sorted = [...players].sort((a, b) => b.points - a.points);
+  return sorted.findIndex((p) => p.id === playerId);
+}

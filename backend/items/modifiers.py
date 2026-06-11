@@ -119,14 +119,18 @@ def apply_dice_roll(
         return die, 0, die, str(die), {"backward": True, "one_die": True, "rawDice": [die, 0]}, factors
 
     tri = _has_mod(user.id, "trinity_dice")
-    if tri:
-        pick = use_cheat.get("trinityPick")
+    pick = use_cheat.get("trinityPick")
+    is_trinity = bool(tri) or (pick and len(pick) == 2)
+    if tri and pick and len(pick) == 2:
+        d1, d2 = int(pick[0]), int(pick[1])
+        _consume_mod(tri)
         d3 = use_cheat.get("trinityThird")
-        if pick and len(pick) == 2:
-            d1, d2 = int(pick[0]), int(pick[1])
-            _consume_mod(tri)
-            third = f", третий {d3}" if d3 is not None else ""
-            factors.append(f"«Бог любит троицу»: выбраны {d1}+{d2}{third}")
+        third = f", третий {d3}" if d3 is not None else ""
+        factors.append(f"«Бог любит троицу»: выбраны {d1}+{d2}{third}")
+    elif is_trinity and pick and len(pick) == 2:
+        d3 = use_cheat.get("trinityThird")
+        third = f", третий {d3}" if d3 is not None else ""
+        factors.append(f"«Бог любит троицу»: выбраны {d1}+{d2}{third}")
 
     cheat_ready = _has_mod(user.id, "cheat_dice_ready")
     if cheat_ready and use_cheat.get("cheatDie") in (1, 2) and use_cheat.get("cheatValue"):
@@ -151,7 +155,7 @@ def apply_dice_roll(
         factors.append("«Тухлая шаурма»: −1 с каждого кубика")
 
     hu_ready = _has_mod(user.id, "huubik_dice_ready")
-    if hu_ready and not tri:
+    if hu_ready and not is_trinity:
         if d1 >= d2:
             d1 = 1
         else:
