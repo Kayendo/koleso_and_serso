@@ -49,8 +49,8 @@ def _charges(item: ItemDef) -> int:
         return 1
 
 
-# На колесе приколов срабатывают сразу, даже если kind=item (магазины, «два по одному»)
-WHEEL_DROP_INSTANT_IDS = frozenset({23, 24, 25})
+# На колесе приколов срабатывают сразу, даже если kind=item (магазины)
+WHEEL_DROP_INSTANT_IDS = frozenset({24, 25})
 
 
 def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
@@ -93,7 +93,6 @@ def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
         "bandit",
         "dirtykin",
         "castling",
-        "two_for_one",
         "swap_inv_random",
         "help_laggard",
         "hurry",

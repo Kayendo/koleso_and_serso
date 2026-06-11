@@ -113,7 +113,6 @@ def reset_player(user: User, *, phase: str = "idle", position: int = 0) -> None:
         pending_shop_pick,
         pending_shop_repick,
         pending_spin,
-        pending_two_for_one,
         pending_wheel,
         pending_wheel_banner,
     )
@@ -136,7 +135,6 @@ def reset_player(user: User, *, phase: str = "idle", position: int = 0) -> None:
     pending_wheel.pop(user.id, None)
     pending_spin.pop(user.id, None)
     pending_crown_pick.pop(user.id, None)
-    pending_two_for_one.pop(user.id, None)
     pending_shop_pick.pop(user.id, None)
     pending_shop_repick.pop(user.id, None)
     pending_dice_choice.pop(user.id, None)
@@ -147,3 +145,15 @@ def player(username: str) -> User:
     u = User.query.filter_by(username=username).first()
     assert u
     return u
+
+
+def complete_physics_roll(user: User, d1: int = 3, d2: int = 4, options=None):
+    """roll-dice → confirm-dice-physics (для тестов после физического броска)."""
+    from backend.turn_actions import confirm_dice_physics_for_user, roll_dice_for_user
+
+    result = roll_dice_for_user(user, options or {})
+    if isinstance(result, tuple):
+        return result
+    if result.get("awaitingPhysics"):
+        return confirm_dice_physics_for_user(user, {"dice": [d1, d2], **(options or {})})
+    return result

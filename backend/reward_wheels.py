@@ -145,7 +145,7 @@ def open_reward_wheel_for_user(user: User, *, emit) -> dict | tuple[dict, int]:
     if left <= 0:
         return {"error": "Нет оставшихся колёс награды"}, 400
     if not user.reward_dice_ready:
-        return {"error": "Сначала бросьте призовой кубик"}, 400
+        return {"error": "Сначала сделайте призовые вращения"}, 400
 
     picked = pick_wheel_items(12, user_id=user.id)
     _pending_item_wheel_reward[user.id] = [i.to_dict() for i in picked]
@@ -181,7 +181,7 @@ def spin_reward_wheel_for_user(user: User, *, emit) -> dict | tuple[dict, int]:
     if not items:
         return {"error": "Нет предметов для колеса"}, 400
 
-    from backend.random_utils import randbelow
+    from backend.random_utils import randbelow, random_meta
 
     target_index = randbelow(len(items))
     chosen = items[target_index]
@@ -197,6 +197,7 @@ def spin_reward_wheel_for_user(user: User, *, emit) -> dict | tuple[dict, int]:
         "selectedItemName": chosen.get("name"),
         "rewardSpinsRemaining": _spins_left(user),
         "user": user.to_public_dict(),
+        **random_meta(),
     }
     from backend.pending_wheels import pending_spin
 

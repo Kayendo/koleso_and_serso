@@ -151,26 +151,3 @@ def apply_wheel_items_bundle(
         "factors": all_factors,
         "user": user.to_public_dict(),
     }
-
-
-def apply_two_for_one_bundle(
-    user: User,
-    item_ids: list[int],
-    *,
-    dice_label: str,
-    cell_name: str,
-    center_name: str,
-) -> dict:
-    """Центр + соседи сверху/снизу («Два по цене одного»)."""
-    result = apply_wheel_items_bundle(
-        user,
-        item_ids,
-        dice_label=dice_label,
-        cell_name=cell_name,
-        summary=f"Два по цене одного: {center_name} + соседи",
-        header=f"«Два по цене одного»: центр «{center_name}» + соседи",
-        extra={"twoForOne": True},
-    )
-    if not result.get("error"):
-        result["twoForOneBundle"] = True
-    return result

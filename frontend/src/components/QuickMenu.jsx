@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { apiGet } from "../api";
 import { fetchGenres, genreButtonLabel } from "../genres";
-import { phaseLabel } from "../phaseLabels";
 import { playerName } from "../playerName";
+import { EVENT_NAME } from "../branding";
 import GenrePicker from "./GenrePicker";
+import VipChip from "../ui/VipChip";
+import VipLoungeStrip from "../ui/VipLoungeStrip";
 
 const LOADING = "Загрузка...";
 
@@ -25,16 +27,27 @@ export default function QuickMenu({
   onDurkaStepBackward,
   rewardSpins = 0,
   rewardDiceRolled = false,
-  onRollRewardDice,
+  onOpenRewardSlot,
 }) {
   const [genres, setGenres] = useState([]);
   const [pickedGenreId, setPickedGenreId] = useState("");
+  const [clock, setClock] = useState(() =>
+    new Date().toLocaleTimeString("ru-RU")
+  );
 
   const adminFx = currentUser?.adminWheelEffect;
   const adminItemPending = currentUser?.adminItemGrantPending;
 
   useEffect(() => {
     fetchGenres(apiGet).then(setGenres);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(
+      () => setClock(new Date().toLocaleTimeString("ru-RU")),
+      1000
+    );
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -51,7 +64,7 @@ export default function QuickMenu({
     { id: "stats", label: "Статистика", icon: "📊" },
     {
       id: "login",
-      label: currentUser ? "Выйти" : "Логин",
+      label: currentUser ? "Выйти" : "Войти",
       icon: currentUser ? "🚪" : "👤",
     },
   ];
@@ -223,14 +236,13 @@ export default function QuickMenu({
       );
     } else if (phase === "reward_items") {
       if (!rewardDiceRolled) {
-        const loading = actionLoading === "rewardDice";
         turnButton = (
           <button
             className="btn primary full"
-            onClick={onRollRewardDice}
+            onClick={onOpenRewardSlot}
             disabled={busy}
           >
-            {loading ? LOADING : "Призовой кубик"}
+            Призовые вращения
           </button>
         );
       } else {
@@ -266,11 +278,22 @@ export default function QuickMenu({
   }
 
   return (
-    <aside className="sidebar left">
-      <h2>Быстрый доступ</h2>
-      <p className="sidebar-time">
-        {new Date().toLocaleTimeString("ru-RU")} MSK
+    <aside className="sidebar left sidebar--vip">
+      <VipLoungeStrip />
+      <div className="sidebar-brand sidebar-brand--vip">
+        <div className="sidebar-brand__mark" aria-hidden="true">
+          ♛
+        </div>
+        <div>
+          <VipChip label="VIP" variant="platinum" className="sidebar-vip-chip" />
+          <h2>{EVENT_NAME}</h2>
+        </div>
+      </div>
+      <p className="sidebar-time sidebar-time--vip">
+        <span className="sidebar-live-dot" />
+        {clock} MSK · CONCIERGE ONLINE
       </p>
+
       <nav className="quick-menu">
         {items.map((it) => (
           <button
@@ -284,19 +307,22 @@ export default function QuickMenu({
               }
             }}
           >
-            <span>{it.icon}</span> {it.label}
+            <span className="quick-btn__icon">{it.icon}</span>
+            <span className="quick-btn__label">{it.label}</span>
           </button>
         ))}
       </nav>
 
-      <div className="cell-info-panel">
+      <div
+        className={`cell-info-panel${hoverCell ? " cell-info-panel--active" : ""}`}
+      >
         <h3>Клетка</h3>
         {hoverCell ? (
           <>
             <p className="cell-info-title">{hoverCell.name}</p>
-            <p className="cell-info-genre">
-              {hoverCell.genreLabel || hoverCell.type}
-            </p>
+            {hoverCell.genreLabel && (
+              <p className="cell-info-genre">{hoverCell.genreLabel}</p>
+            )}
           </>
         ) : (
           <p className="muted">Наведите курсор на клетку поля</p>
@@ -304,13 +330,14 @@ export default function QuickMenu({
       </div>
 
       {isPlayer && currentUser && (
-        <div className="turn-panel">
+        <div className="turn-panel turn-panel--vip">
+          <div className="turn-panel__crest" aria-hidden="true">
+            <span>♛</span>
+          </div>
+          <p className="turn-panel__label">PRIVATE TABLE</p>
           <p>
             Вы: <strong>{playerName(currentUser)}</strong>
           </p>
-          {phase && (
-            <p className="muted phase-label">{phaseLabel(phase)}</p>
-          )}
           {turnError && <p className="error">{turnError}</p>}
           {turnButton}
         </div>

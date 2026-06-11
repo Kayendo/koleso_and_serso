@@ -1,28 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { apiPost } from "../api";
+import { getCachedItemImage, loadItemImage } from "../itemArt";
+import ItemIcon from "./ItemIcon";
+import VipChip from "../ui/VipChip";
+import { WheelPhysicsSim } from "./wheel/wheelPhysics";
 
-const SPIN_MS = 2800;
-const SIZE = 520;
+const SIZE = 540;
 
 const SEGMENT_COLORS = [
-  "#e74c3c",
-  "#3498db",
-  "#9b59b6",
-  "#f39c12",
-  "#1abc9c",
-  "#e67e22",
-  "#2ecc71",
-  "#34495e",
-  "#d35400",
-  "#16a085",
-  "#c0392b",
-  "#8e44ad",
+  ["#8b1a1a", "#c0392b"],
+  ["#1a4a7a", "#2980b9"],
+  ["#4a2a6a", "#8e44ad"],
+  ["#8a6010", "#d4a017"],
+  ["#0d5a4a", "#16a085"],
+  ["#8a4010", "#e67e22"],
+  ["#1a5a30", "#27ae60"],
+  ["#1a2030", "#34495e"],
+  ["#6a2010", "#c0392b"],
+  ["#0a4a40", "#1abc9c"],
+  ["#5a3080", "#9b59b6"],
+  ["#6a5010", "#e8c468"],
 ];
 
 function normalizeGames(games, wheelItems, itemWheel) {
   if (itemWheel && wheelItems?.length) {
     return wheelItems.map((i) => ({
-      title: i.wheelLabel || `#${i.id} ${i.name}`,
+      title: i.name || i.wheelLabel || "Предмет",
       itemId: i.id,
       flavor: i.flavor,
       description: i.description,
@@ -86,6 +90,8 @@ export default function WheelModal({
   onDismiss,
 }) {
   const [rotation, setRotation] = useState(0);
+  const [flapperDeg, setFlapperDeg] = useState(0);
+  const simRef = useRef(null);
   const [selected, setSelected] = useState(null);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [tip, setTip] = useState(null);
@@ -103,6 +109,7 @@ export default function WheelModal({
   );
   const canvasRef = useRef(null);
   const lastSpinKeyRef = useRef(null);
+  const [itemArtTick, setItemArtTick] = useState(0);
 
   const gamesSig = useMemo(() => gamesSignature(games), [games]);
   const list = items;
@@ -111,6 +118,18 @@ export default function WheelModal({
   useEffect(() => {
     setItems(normalizeGames(games, wheelItems, itemWheel));
   }, [gamesSig, itemWheel, wheelItems]);
+
+  useEffect(() => {
+    if (!itemWheel || !items.length) return undefined;
+    let cancelled = false;
+    const ids = items.map((it) => it.itemId).filter(Boolean);
+    Promise.all(ids.map((id) => loadItemImage(id))).then(() => {
+      if (!cancelled) setItemArtTick((t) => t + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [itemWheel, items]);
 
   useEffect(() => {
     if (!hltbItems?.length) return;
@@ -165,19 +184,30 @@ export default function WheelModal({
       const h = canvas.height;
       const cx = w / 2;
       const cy = h / 2;
-      const r = w / 2 - 8;
+      const rOuter = w / 2 - 6;
+      const rInner = rOuter - 14;
 
       ctx.clearRect(0, 0, w, h);
 
+      // Внешнее золотое кольцо
+      const ringGrad = ctx.createRadialGradient(cx, cy, rInner, cx, cy, rOuter + 4);
+      ringGrad.addColorStop(0, "#3d2e10");
+      ringGrad.addColorStop(0.5, "#e8c468");
+      ringGrad.addColorStop(1, "#6a5018");
+      ctx.beginPath();
+      ctx.arc(cx, cy, rOuter + 4, 0, Math.PI * 2);
+      ctx.fillStyle = ringGrad;
+      ctx.fill();
+
       if (!list.length) {
-        ctx.fillStyle = "#444";
         ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+        ctx.fillStyle = "#1a1520";
         ctx.fill();
-        ctx.fillStyle = "#aaa";
-        ctx.font = "16px Manrope, sans-serif";
+        ctx.fillStyle = "#c9a84c";
+        ctx.font = "600 16px Outfit, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("Нет игр", cx, cy);
+        ctx.fillText("Нет секторов", cx, cy);
         return;
       }
 
@@ -188,34 +218,122 @@ export default function WheelModal({
       for (let i = 0; i < n; i++) {
         const start = i * slice + rotRad;
         const end = start + slice;
+        const mid = start + slice / 2;
+        const [c0, c1] = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+        const segGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, rInner);
+        segGrad.addColorStop(0, c1);
+        segGrad.addColorStop(1, c0);
+
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, r, start, end);
+        ctx.arc(cx, cy, rInner, start, end);
         ctx.closePath();
-        ctx.fillStyle = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+        ctx.fillStyle = segGrad;
         ctx.fill();
-        ctx.strokeStyle = i === hoverIdx ? "#fff" : "#111";
-        ctx.lineWidth = i === hoverIdx ? 3 : 2;
+
+        if (i === hoverIdx) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+          ctx.fill();
+        }
+
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Штифт между секторами
+        const pegR = rInner - 4;
+        const px = cx + Math.cos(start) * pegR;
+        const py = cy + Math.sin(start) * pegR;
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#f5d98a";
+        ctx.fill();
+        ctx.strokeStyle = "#3d2e10";
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         if (withLabels) {
           ctx.save();
           ctx.translate(cx, cy);
-          ctx.rotate(start + slice / 2);
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold 14px Manrope, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(String(list[i].title).slice(0, 24), r * 0.62, 5);
+          ctx.rotate(mid);
+          const labelR = rInner * 0.64;
+          const itemId = list[i].itemId;
+          const icon = itemWheel && itemId ? getCachedItemImage(itemId) : null;
+
+          if (icon) {
+            const iconSize = Math.min(34, slice * rInner * 0.42);
+            ctx.shadowColor = "rgba(0,0,0,0.75)";
+            ctx.shadowBlur = 5;
+            ctx.drawImage(
+              icon,
+              labelR - iconSize / 2,
+              -iconSize - 4,
+              iconSize,
+              iconSize
+            );
+            ctx.shadowBlur = 0;
+            const shortName = String(list[i].title || "").slice(0, 14);
+            if (shortName) {
+              ctx.fillStyle = "#fff";
+              ctx.font = "bold 10px Outfit, system-ui, sans-serif";
+              ctx.textAlign = "center";
+              ctx.shadowColor = "rgba(0,0,0,0.8)";
+              ctx.shadowBlur = 3;
+              ctx.fillText(shortName, labelR, 10);
+              ctx.shadowBlur = 0;
+            }
+          } else {
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 13px Outfit, system-ui, sans-serif";
+            ctx.textAlign = "center";
+            ctx.shadowColor = "rgba(0,0,0,0.8)";
+            ctx.shadowBlur = 4;
+            const title = String(list[i].title).slice(0, 22);
+            ctx.fillText(title, labelR, 5);
+            ctx.shadowBlur = 0;
+          }
           ctx.restore();
         }
       }
 
+      // Огни по ободу
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2 + rotRad * 0.02;
+        const lx = cx + Math.cos(a) * (rOuter - 2);
+        const ly = cy + Math.sin(a) * (rOuter - 2);
+        ctx.beginPath();
+        ctx.arc(lx, ly, i % 2 === 0 ? 3.5 : 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = i % 2 === 0 ? "#fff8e0" : "#e8c468";
+        ctx.fill();
+      }
+
+      // Центральная ступица
+      const hubGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 38);
+      hubGrad.addColorStop(0, "#f5d98a");
+      hubGrad.addColorStop(0.4, "#a88438");
+      hubGrad.addColorStop(1, "#1a1208");
       ctx.beginPath();
-      ctx.arc(cx, cy, 26, 0, Math.PI * 2);
-      ctx.fillStyle = "#1a1a1a";
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.fillStyle = hubGrad;
       ctx.fill();
+      ctx.strokeStyle = "#f5d98a";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+      ctx.fillStyle = "#0a0806";
+      ctx.fill();
+      ctx.shadowColor = "rgba(245, 217, 138, 0.85)";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#f5d98a";
+      ctx.font = "bold 11px Outfit, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("VIP", cx, cy);
+      ctx.shadowBlur = 0;
     },
-    [list]
+    [list, itemWheel]
   );
 
   useEffect(() => {
@@ -223,7 +341,7 @@ export default function WheelModal({
       drawWheel(rotation, labelsVisible);
     });
     return () => cancelAnimationFrame(id);
-  }, [list, rotation, labelsVisible, drawWheel]);
+  }, [list, rotation, labelsVisible, itemArtTick, drawWheel]);
 
   const hitTestSegment = (clientX, clientY) => {
     const canvas = canvasRef.current;
@@ -236,8 +354,8 @@ export default function WheelModal({
     const x = (clientX - rect.left) * scaleX - cx;
     const y = (clientY - rect.top) * scaleY - cy;
     const dist = Math.hypot(x, y);
-    const r = canvas.width / 2 - 8;
-    if (dist < 28 || dist > r) return -1;
+    const r = canvas.width / 2 - 20;
+    if (dist < 40 || dist > r) return -1;
 
     let angleDeg = (Math.atan2(y, x) * 180) / Math.PI;
     angleDeg = ((angleDeg - rotation) % 360 + 360) % 360;
@@ -254,6 +372,7 @@ export default function WheelModal({
     if (idx < 0 || !list[idx]) return;
     const it = list[idx];
     setTip({
+      itemId: it.itemId,
       title: it.title,
       flavor: it.flavor,
       description: it.description || "—",
@@ -297,10 +416,12 @@ export default function WheelModal({
       if (!active.length) return;
 
       const n = active.length;
-      const slice = 360 / n;
-      const targetAngle = 360 - spinCommand.targetIndex * slice - slice / 2;
-      const rot = 4 * 360 + targetAngle;
+      const sim = new WheelPhysicsSim(n);
+      sim.snapTo(spinCommand.targetIndex, 3);
+      simRef.current = sim;
+      const rot = sim.getRotationDeg();
       setRotation(rot);
+      setFlapperDeg(0);
       setShowLabels(true);
       setSpinning(false);
       setDone(true);
@@ -353,20 +474,27 @@ export default function WheelModal({
     setAlreadyPlayed(false);
 
     const n = active.length;
-    const slice = 360 / n;
-    const targetAngle = 360 - spinCommand.targetIndex * slice - slice / 2;
-    const extra = 4 * 360 + targetAngle;
-    const start = performance.now();
+    const sim = new WheelPhysicsSim(n);
+    sim.startSpin(spinCommand.targetIndex, 3);
+    simRef.current = sim;
+    let last = performance.now();
 
     const tick = (now) => {
-      const t = Math.min(1, (now - start) / SPIN_MS);
-      const ease = 1 - Math.pow(1 - t, 3);
-      const rot = extra * ease;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const running = sim.step(dt);
+      const rot = sim.getRotationDeg();
       setRotation(rot);
+      setFlapperDeg(sim.getFlapperDeg());
       drawWheel(rot, true);
-      if (t < 1) {
+      if (running) {
         requestAnimationFrame(tick);
       } else {
+        sim.angle = sim._targetAngle;
+        const rotFinal = sim.getRotationDeg();
+        setRotation(rotFinal);
+        drawWheel(rotFinal, true);
+
         if (spinCommand.crownPick?.choices?.length) {
           setNeighborPick(spinCommand.crownPick);
           setSelected(null);
@@ -408,8 +536,16 @@ export default function WheelModal({
 
   if (lottery) {
     return (
-      <div className="overlay overlay-spectate">
-        <div className="modal-square wheel-modal lottery-modal">
+      <motion.div
+        className="overlay overlay-spectate overlay--casino"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <div className="modal-square wheel-modal lottery-modal modal-panel--casino">
+          <div className="wheel-vip-banner">
+            <VipChip label="JACKPOT" variant="ruby" pulse />
+            <span className="wheel-vip-banner__sub">777 HIGH LIMIT · WHALE LOTTERY</span>
+          </div>
           <p className="spectate-actor">{actorUsername} — лотерея</p>
           <h3>777 Лотерея</h3>
           <p>
@@ -450,7 +586,7 @@ export default function WheelModal({
             <p className="muted">Ждём ввода игрока…</p>
           )}
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -460,8 +596,21 @@ export default function WheelModal({
   );
 
   return (
-    <div className="overlay overlay-spectate">
-      <div className="modal-square wheel-modal wheel-modal-large">
+    <motion.div
+      className="overlay overlay-spectate overlay--casino"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <div className="modal-square wheel-modal wheel-modal-large wheel-casino-chamber">
+        <div className="wheel-vip-banner">
+          <VipChip label="HIGH LIMIT" variant="platinum" pulse />
+          <span className="wheel-vip-banner__sub">PRIVATE WHEEL · CONCIERGE SPIN</span>
+        </div>
+        <div className="wheel-casino-lights" aria-hidden="true">
+          {Array.from({ length: 16 }, (_, i) => (
+            <span key={i} className="wheel-casino-bulb" style={{ "--i": i }} />
+          ))}
+        </div>
         {canInteract && onDismiss && !spinning && !done && (
           <button
             type="button"
@@ -504,9 +653,18 @@ export default function WheelModal({
             Доп. прокруты колеса: <strong>{extraWheelSpinsRemaining}</strong>
           </p>
         )}
-        <div className="wheel-assembly">
-          <div className="wheel-arrow-fixed" aria-hidden="true" />
-          <div className="wheel-spin-layer">
+        <div className="wheel-assembly wheel-assembly--casino">
+          <div
+            className="wheel-flapper"
+            style={{
+              transform: `translateY(-50%) rotate(${flapperDeg}deg)`,
+            }}
+            aria-hidden="true"
+          >
+            <div className="wheel-flapper__arm" />
+            <div className="wheel-flapper__paddle" />
+          </div>
+          <div className="wheel-spin-layer wheel-spin-layer--casino">
             <canvas
               ref={canvasRef}
               width={SIZE}
@@ -536,7 +694,12 @@ export default function WheelModal({
         )}
         {tip && itemWheel && (
           <div className="inv-tooltip wheel-item-tip">
-            <strong>{tip.title}</strong>
+            <div className="wheel-item-tip__head">
+              {tip.itemId != null && (
+                <ItemIcon itemId={tip.itemId} title={tip.title} large />
+              )}
+              <strong>{tip.title}</strong>
+            </div>
             {tip.flavor && <p className="inv-flavor">{tip.flavor}</p>}
             <p className="inv-mechanics">{tip.description}</p>
           </div>
@@ -560,7 +723,7 @@ export default function WheelModal({
                 <button
                   key={c.choiceIndex}
                   type="button"
-                  className={`btn ${
+                  className={`btn crown-pick-btn ${
                     shopMode === "leprechaun"
                       ? shopSelections.includes(c.choiceIndex)
                         ? "primary"
@@ -587,11 +750,16 @@ export default function WheelModal({
                     }
                   }}
                 >
-                  {c.title}
-                  {!shopMode && c.choiceIndex === 1 ? " (выпало)" : ""}
-                  {shopMode && c.wheelIndex === neighborPick.landedIndex
-                    ? " (выпало)"
-                    : ""}
+                  {itemWheel && c.itemId != null && (
+                    <ItemIcon itemId={c.itemId} title={c.title} />
+                  )}
+                  <span>
+                    {c.title}
+                    {!shopMode && c.choiceIndex === 1 ? " (выпало)" : ""}
+                    {shopMode && c.wheelIndex === neighborPick.landedIndex
+                      ? " (выпало)"
+                      : ""}
+                  </span>
                 </button>
               ))}
             </div>
@@ -699,7 +867,11 @@ export default function WheelModal({
             <p className="wheel-result">
               Выпало:{" "}
               {itemWheel ? (
-                <span>{selected || `#${selectedItemId}`}</span>
+                <span>
+                  {selected ||
+                    list.find((g) => g.itemId === selectedItemId)?.title ||
+                    "Предмет"}
+                </span>
               ) : (
                 <a
                   href={urlForIndex(selectedIdx)}
@@ -739,6 +911,6 @@ export default function WheelModal({
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

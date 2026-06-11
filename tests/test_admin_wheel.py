@@ -1,13 +1,12 @@
 """Админ-эффекты колеса: жанр → ролл игры → заглушка для админа."""
 
-from backend.items.admin_item_grant import get_admin_item_grant
 from backend.items.admin_wheel import get_active_admin_wheel
 from backend.items.effects import apply_on_wheel_land
 from backend.items.inventory import has_item
 from backend.items.use import use_inventory_item
 from backend.items.wheel import apply_wheel_result
 from backend.models import db
-from backend.turn_actions import confirm_wheel_for_user, open_wheel_for_user, spin_wheel_for_user
+from backend.turn_actions import confirm_wheel_for_user, open_wheel_for_user
 
 from tests.conftest import reset_player
 from tests.test_all_items import _ctx
@@ -50,44 +49,6 @@ def test_shop_rerolls_item_wheel(app, actor):
         assert repick and repick.get("mode") == "chat"
         assert extra_wheel_spins_left(actor.id) == 1
         assert not get_active_admin_wheel(actor.id)
-
-
-def test_two_for_one_admin_pending(app, actor):
-    with app.app_context():
-        reset_player(actor, position=8)
-        from backend.items.wheel_extras import extra_wheel_spins_left
-        from backend.pending_wheels import has_two_for_one, pending_item_wheel
-        from backend.turn_actions import _pending_item_wheel
-
-        apply_wheel_result(actor, 23, dice_label="2+2", cell_name="Кайфарик")
-        assert extra_wheel_spins_left(actor.id) == 1
-        assert has_two_for_one(actor.id)
-
-        items = [
-            {"id": i, "name": f"It{i}", "wheelLabel": f"#{i}"}
-            for i in range(1, 9)
-        ]
-        _pending_item_wheel[actor.id] = items
-        actor.turn_phase = "wheel"
-        db.session.commit()
-
-        from unittest.mock import patch
-
-        with patch("backend.turn_actions.randbelow", return_value=3):
-            spin_wheel_for_user(actor)
-
-        result = confirm_wheel_for_user(
-            actor, {"wheelType": "item", "targetIndex": 3, "diceLabel": "2+2"}
-        )
-        payload = result[0] if isinstance(result, tuple) else result
-        assert payload.get("adminItemGrantPending")
-        grant = get_admin_item_grant(actor.id)
-        assert grant
-        sectors = grant.get("sectors") or []
-        assert len(sectors) == 2
-        assert {s.get("wheelIndex") for s in sectors} == {2, 4}
-        assert 3 not in {s.get("wheelIndex") for s in sectors}
-        assert actor.turn_phase == "idle"
 
 
 def test_admin_wheel_flow_stub_game(app, actor):

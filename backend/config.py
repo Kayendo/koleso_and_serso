@@ -6,6 +6,11 @@ DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = BASE_DIR / "uploads" / "avatars"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "kolesoblya-dev-change-me")
+
+# Истинный рандом: random.org (атмосферный шум), опционально API-ключ для большего лимита
+RANDOM_ORG_API_KEY = os.environ.get("RANDOM_ORG_API_KEY", "")
+TRUE_RANDOM_ENABLED = os.environ.get("TRUE_RANDOM_ENABLED", "1") not in ("0", "false", "no")
+TRUE_RANDOM_TIMEOUT = float(os.environ.get("TRUE_RANDOM_TIMEOUT", "4"))
 TENOR_API_KEY = os.environ.get("TENOR_API_KEY", "LIVDSRZULELA")
 TENOR_CLIENT_KEY = os.environ.get("TENOR_CLIENT_KEY", "kolesoblya")
 

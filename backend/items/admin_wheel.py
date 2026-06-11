@@ -8,7 +8,6 @@ from backend.models import PlayerGame, User, db
 from backend.services import game_lists
 from backend.services.turn_service import cell_game_source
 
-# 23 «Два по цене одного» — рerolл колеса приколов, не админ-поток
 ADMIN_WHEEL_ITEM_IDS = frozenset({40, 41})
 
 ADMIN_WHEEL_BANNERS: dict[int, str] = {

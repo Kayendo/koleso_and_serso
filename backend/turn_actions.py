@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import current_app
 
-from backend.random_utils import randbelow
+from backend.random_utils import randbelow, random_meta
 
 from backend.board import BOARD_BY_ID, BOARD_SIZE, DURKA_CELL_ID, START_CELL_ID
 from backend.models import User, db
@@ -179,7 +179,44 @@ def roll_dice_for_user(user: User, options: dict | None = None) -> dict | tuple[
         _emit("dice_rolled", payload)
         return payload
 
-    return _finish_dice_roll(user, d1, d2, options)
+    return _begin_physics_dice_roll(user)
+
+
+def _begin_physics_dice_roll(user: User) -> dict:
+    """Ждём физический бросок на клиенте; движение — после confirm-dice-physics."""
+    user.last_position = user.position
+    user.turn_phase = "rolling"
+    db.session.commit()
+    payload = {
+        **_user_payload(user),
+        "awaitingPhysics": True,
+        "diceCount": 2,
+        "user": user.to_public_dict(),
+    }
+    _emit("dice_rolled", payload)
+    payload["user"] = user.to_public_dict()
+    return payload
+
+
+def confirm_dice_physics_for_user(
+    user: User, data: dict | None = None
+) -> dict | tuple[dict, int]:
+    err = require_phase(user, "rolling")
+    if err:
+        return {"error": err}, 400
+
+    data = data or {}
+    dice = data.get("dice") or []
+    if len(dice) < 2:
+        return {"error": "Нужны два значения кубиков"}, 400
+    try:
+        d1, d2 = int(dice[0]), int(dice[1])
+    except (TypeError, ValueError):
+        return {"error": "Некорректные значения кубиков"}, 400
+    if not (1 <= d1 <= 6 and 1 <= d2 <= 6):
+        return {"error": "Кубик должен быть от 1 до 6"}, 400
+
+    return _finish_dice_roll(user, d1, d2, data)
 
 
 def confirm_dice_roll_for_user(
@@ -264,7 +301,7 @@ def reveal_trinity_dice_for_user(user: User) -> dict | tuple[dict, int]:
 def _finish_dice_roll(
     user: User, d1: int, d2: int, options: dict | None = None
 ) -> dict:
-    from backend.items.modifiers import apply_dice_roll
+    from backend.items.modifiers import apply_dice_roll, build_move_path
 
     options = options or {}
     d1, d2, steps, label, move_meta, factors = apply_dice_roll(
@@ -273,6 +310,11 @@ def _finish_dice_roll(
     user.turn_phase = "rolling"
     db.session.commit()
 
+    backward = bool(move_meta.get("backward"))
+    path, new_pos, passed = build_move_path(
+        user.position, steps, backward=backward
+    )
+
     payload = {
         **_user_payload(user),
         "rawDice": move_meta.get("rawDice", [d1, d2]),
@@ -280,9 +322,13 @@ def _finish_dice_roll(
         "steps": steps,
         "label": label,
         "fromPosition": user.position,
+        "movePath": path,
+        "stepMs": int(STEP_DELAY_SEC * 1000),
+        "avatarUrl": user.avatar_url or "/avatars/default.png",
         "moveMeta": move_meta,
         "factors": factors,
         "user": user.to_public_dict(),
+        **random_meta(),
     }
     _emit("dice_rolled", payload)
     _socketio().start_background_task(
@@ -293,6 +339,9 @@ def _finish_dice_roll(
         move_meta,
         factors,
         current_app._get_current_object(),
+        path,
+        new_pos,
+        passed,
     )
     payload["user"] = user.to_public_dict()
     return payload
@@ -308,6 +357,9 @@ def _animate_and_finish(
     move_meta: dict,
     factors: list,
     app,
+    path: list | None = None,
+    new_pos: int | None = None,
+    passed: bool | None = None,
 ) -> None:
     from backend.items.inventory import log_turn
     from backend.items.modifiers import build_move_path, tick_turn_modifiers
@@ -320,9 +372,10 @@ def _animate_and_finish(
         if not user or user.turn_phase != "rolling":
             return
 
-        path, new_pos, passed = build_move_path(
-            user.position, steps, backward=backward
-        )
+        if path is None or new_pos is None or passed is None:
+            path, new_pos, passed = build_move_path(
+                user.position, steps, backward=backward
+            )
 
         _emit(
             "token_move_path",
@@ -778,6 +831,7 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
             "wheelItems": items,
             "user": user.to_public_dict(),
             **_wheel_ui_meta(user),
+            **random_meta(),
         }
         shop_repick = get_shop_repick(user.id)
         if shop_repick:
@@ -842,6 +896,7 @@ def spin_wheel_for_user(user: User) -> dict | tuple[dict, int]:
         "duplicateGame": duplicate_game,
         "user": user.to_public_dict(),
         **_wheel_ui_meta(user),
+        **random_meta(),
     }
 
     from backend.items.modifiers import _has_mod
@@ -1038,55 +1093,17 @@ def confirm_wheel_for_user(user: User, data: dict | None) -> dict | tuple[dict, 
         if not item_id:
             return {"error": "Не выбран предмет"}, 400
 
-        from backend.items.admin_item_grant import resolve_admin_item_wheel
         from backend.items.wheel import apply_wheel_result
-        from backend.items.wheel_pick import vertical_neighbor_indices
-        from backend.pending_wheels import pop_two_for_one
 
         cell = BOARD_BY_ID[user.position]
         dice_label = str(data.get("diceLabel") or "?")
-        items = _pending_item_wheel.get(user.id, [])
 
-        if pop_two_for_one(user.id):
-            idx = data.get("targetIndex")
-            if idx is None and data.get("selectedItemId") and items:
-                sid = int(data["selectedItemId"])
-                idx = next(
-                    (i for i, it in enumerate(items) if it.get("id") == sid),
-                    None,
-                )
-            if idx is None:
-                return {"error": "Не выбран сектор для «Два по цене одного»"}, 400
-            idx = int(idx)
-            if not items or idx < 0 or idx >= len(items):
-                return {"error": "Некорректный сектор колеса"}, 400
-            sectors = []
-            for wi in vertical_neighbor_indices(idx, len(items)):
-                it = items[wi]
-                sectors.append(
-                    {
-                        "itemId": it.get("id"),
-                        "name": it.get("name"),
-                        "wheelLabel": it.get("wheelLabel") or it.get("name"),
-                        "wheelIndex": wi,
-                    }
-                )
-            center_name = items[idx].get("name") or "?"
-            result = resolve_admin_item_wheel(
-                user,
-                23,
-                sectors,
-                dice_label=dice_label,
-                cell_name=cell.name,
-                note=f"Выпало: «{center_name}» → админ выдаст соседей сверху и снизу",
-            )
-        else:
-            result = apply_wheel_result(
-                user,
-                int(item_id),
-                dice_label=dice_label,
-                cell_name=cell.name,
-            )
+        result = apply_wheel_result(
+            user,
+            int(item_id),
+            dice_label=dice_label,
+            cell_name=cell.name,
+        )
         if result.get("error"):
             return result, 400
         _pending_item_wheel.pop(user.id, None)

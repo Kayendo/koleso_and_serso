@@ -14,13 +14,6 @@ def neighbor_indices(idx: int, n: int, *, span: int = 1) -> list[int]:
     return [(idx - 2) % n, (idx - 1) % n, (idx + 1) % n, (idx + 2) % n]
 
 
-def vertical_neighbor_indices(idx: int, n: int) -> list[int]:
-    """Только секторы сверху и снизу от центра (без центра)."""
-    if n <= 0:
-        return []
-    return [(idx - 1) % n, (idx + 1) % n]
-
-
 def choices_for_titles(wheel: list[str], idx: int, *, four: bool = False) -> list[dict]:
     n = len(wheel)
     indices = neighbor_indices(idx, n, span=2 if four else 1)

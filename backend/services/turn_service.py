@@ -40,7 +40,13 @@ def _hltb_background(game_id: int, title: str, app) -> None:
 
 
 def roll_dice() -> tuple[int, int, str]:
-    a, b = randint(1, 6), randint(1, 6)
+    from backend.services.true_random import fetch_integers
+
+    vals = fetch_integers(2, 1, 6)
+    if vals and len(vals) >= 2:
+        a, b = vals[0], vals[1]
+    else:
+        a, b = randint(1, 6), randint(1, 6)
     return a, b, f"{a}+{b}"
 
 

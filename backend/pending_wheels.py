@@ -16,25 +16,11 @@ pending_admin_wheel: dict[int, dict] = {}
 pending_wheel_banner: dict[int, str] = {}
 # Фаза до цепочки доп. колёс (playing и т.д.)
 pending_resume_phase: dict[int, str] = {}
-# «Два по цене одного»: на след. подтверждении — центр + 2 соседа
-pending_two_for_one: dict[int, bool] = {}
-# Магазины / «Два по цене одного»: rerolл → админ выдаёт предметы
+# Магазины: rerolл → админ выдаёт предметы
 pending_shop_repick: dict[int, dict] = {}
 pending_shop_pick: dict[int, dict] = {}
-# Ожидает выдачи предметов админом (магазины, два по одному)
+# Ожидает выдачи предметов админом (магазины)
 pending_admin_item_grant: dict[int, dict] = {}
-
-
-def set_two_for_one(user_id: int) -> None:
-    pending_two_for_one[user_id] = True
-
-
-def has_two_for_one(user_id: int) -> bool:
-    return pending_two_for_one.get(user_id, False)
-
-
-def pop_two_for_one(user_id: int) -> bool:
-    return pending_two_for_one.pop(user_id, False)
 
 
 def set_shop_repick(user_id: int, mode: str, *, effect_item_id: int) -> None:

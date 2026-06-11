@@ -28,6 +28,7 @@ function BoardCell({ cell, tokens, hovered, onHover }) {
       className={[
         "board-cell",
         pos.corner ? "corner" : "edge",
+        pos.corner ? `corner-${cell.id}` : "",
         pos.edge || "",
         hovered ? "hovered" : "",
         showImage ? "has-image" : "",
@@ -96,18 +97,38 @@ export default function Board({
 
   return (
     <div className="board-wrap">
-      <div className="board-grid">
+      <div className="board-grid" role="img" aria-label="Игровое поле DOTAG 3">
         <div className="board-center" aria-hidden="true">
-          {centerGif?.url ? (
-            <img
-              key={centerGif.url}
-              src={centerGif.url}
-              alt={centerGif.title || "meme"}
-              className="board-center-gif"
-            />
-          ) : (
-            <span className="board-center-placeholder">meme</span>
-          )}
+          <div className="board-plasma">
+            <div className="board-plasma__bezel">
+              <div className="board-plasma__screen">
+                {centerGif?.url ? (
+                  <img
+                    key={centerGif.url}
+                    src={centerGif.url}
+                    alt={centerGif.title || "meme"}
+                    className="board-center-gif"
+                  />
+                ) : (
+                  <span className="board-center-placeholder">meme</span>
+                )}
+                <div className="board-plasma__fx" aria-hidden="true">
+                  <div className="board-plasma__overlay" />
+                  <div className="board-plasma__shine" />
+                  <div className="board-plasma__scan" />
+                  <div className="board-plasma__watermark">PREMIUM FLOOR</div>
+                </div>
+                <div className="board-plasma__hud-bar board-plasma__hud-bar--top">
+                  <span className="board-plasma__hud board-plasma__hud--live">● LIVE</span>
+                  <span className="board-plasma__hud">VIP SLOTS</span>
+                </div>
+                <div className="board-plasma__hud-bar board-plasma__hud-bar--bottom">
+                  <span className="board-plasma__hud">HIGH LIMIT</span>
+                  <span className="board-plasma__hud">♛ DOTAG TV ♛</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         {cells.map((cell) => {
           const tokens = byPos[cell.id] || [];

@@ -3,27 +3,13 @@ import { apiGet, apiPost } from "../api";
 import { fetchGenres } from "../genres";
 import { playerName } from "../playerName";
 import GenrePicker from "./GenrePicker";
+import ItemIcon from "./ItemIcon";
+import VipChip from "../ui/VipChip";
 
 const LOADING = "Загрузка...";
 const GENRE_PICK_ITEMS = new Set([15]);
 const LAW_ITEMS = new Set([40, 41]);
 const WHEEL_READY_ONLY = new Set([15, 24, 25, 40, 41]);
-
-function ItemIcon({ itemId, title, selected, quantity, charges }) {
-  const showUses =
-    charges != null &&
-    quantity != null &&
-    (charges > quantity || (quantity === 1 && charges > 1));
-  const tip = showUses ? `${title} · осталось ${charges}` : title;
-  return (
-    <div
-      className={`inv-icon ${selected ? "inv-icon-selected" : ""}`}
-      title={tip}
-    >
-      {itemId}
-    </div>
-  );
-}
 
 function StatusRow({ entries, polarity }) {
   const [selectedId, setSelectedId] = useState(null);
@@ -186,9 +172,9 @@ export default function InventoryModal({
   return (
     <>
       {explosivesAlert && (
-        <div className="overlay overlay-spectate explosives-overlay">
+        <div className="overlay overlay-spectate overlay--casino explosives-overlay">
           <div
-            className={`modal-square explosives-modal ${
+            className={`modal-square explosives-modal modal-panel--casino ${
               explosivesAlert.ok ? "explosives-survived" : "explosives-boom"
             }`}
           >
@@ -204,30 +190,40 @@ export default function InventoryModal({
           </div>
         </div>
       )}
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay overlay--casino" onClick={onClose}>
       <div
-        className="modal-panel wide inventory-panel"
+        className="modal-panel wide inventory-panel modal-panel--casino"
         onClick={(e) => e.stopPropagation()}
       >
-        <header>
-          <h2>Инвентарь</h2>
-          <button type="button" className="close" onClick={onClose}>
+        <header className="modal-header--casino inventory-header--vip">
+          <div className="modal-header__title-group modal-header__title-group--stack">
+            <div className="modal-header__title-row">
+              <VipChip label="VAULT" variant="platinum" pulse className="modal-header__chip" />
+              <h2>Сейф предметов</h2>
+            </div>
+            <p className="inventory-vip-sub">PRIVATE VAULT · INSURED LOOT</p>
+          </div>
+          <button type="button" className="close" onClick={onClose} aria-label="Закрыть">
             ×
           </button>
         </header>
         <div className="modal-body inventory-body">
+          <div className="inventory-casino-layout">
+          <div className="inventory-felt-panel">
           <section className="inv-section">
-            <h3>Баффы</h3>
+            <h3 className="inv-section-title">Баффы</h3>
             <StatusRow entries={inventory?.buffs || []} polarity="buff" />
           </section>
 
           <section className="inv-section">
-            <h3>Дебаффы</h3>
+            <h3 className="inv-section-title">Дебаффы</h3>
             <StatusRow entries={inventory?.debuffs || []} polarity="debuff" />
           </section>
+          </div>
 
+          <div className="inventory-items-panel">
           <section className="inv-section">
-            <h3>Предметы</h3>
+            <h3 className="inv-section-title">Предметы</h3>
             <p className="muted inv-hint">
               Выберите предмет и нажмите «Использовать».
             </p>
@@ -265,10 +261,17 @@ export default function InventoryModal({
 
           {selected && (
             <section className="inv-detail-panel">
-              <h4>
-                {selected.name}
-                {selected.isTrap ? " (ловушка)" : ""}
-              </h4>
+              <div className="inv-detail-head">
+                <ItemIcon
+                  itemId={selected.itemId}
+                  title={selected.name}
+                  large
+                />
+                <h4>
+                  {selected.name}
+                  {selected.isTrap ? " (ловушка)" : ""}
+                </h4>
+              </div>
               {selected.flavor && (
                 <p className="inv-flavor">{selected.flavor}</p>
               )}
@@ -299,7 +302,7 @@ export default function InventoryModal({
                           }`}
                           onClick={() => setRepairTargetId(String(it.itemId))}
                         >
-                          #{it.itemId} {it.name} (×{it.quantity})
+                          {it.name} (×{it.quantity})
                         </button>
                       ))}
                   </div>
@@ -430,9 +433,10 @@ export default function InventoryModal({
                 </>
               )}
 
-                          </section>
+            </section>
           )}
-
+          </div>
+          </div>
         </div>
       </div>
     </div>

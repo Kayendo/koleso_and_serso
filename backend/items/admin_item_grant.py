@@ -1,4 +1,4 @@
-"""Ролл колеса приколов → предметы выдаёт админ (магазины, «Два по цене одного»)."""
+"""Ролл колеса приколов → предметы выдаёт админ (магазины)."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ from backend.items.catalog import get_item
 from backend.items.effects import EffectContext
 from backend.models import User, db
 
-ADMIN_ITEM_EFFECT_IDS = frozenset({23, 24, 25})
+ADMIN_ITEM_EFFECT_IDS = frozenset({24, 25})
 
 ADMIN_ITEM_BANNERS: dict[int, str] = {
-    23: "Админ выдаст 2 предмета: соседи сверху и снизу (центр не выдаётся)",
     24: "Админ выдаст предмет по выбору чата",
     25: "Админ выдаст 2 предмета по вашему выбору",
 }
@@ -44,7 +43,7 @@ def public_admin_item_grant(user_id: int) -> dict | None:
 def _clear_shop_buff_mod(user_id: int) -> None:
     from backend.items.modifiers import _consume_mod, _has_mod
 
-    for key in ("shop_chat_buff", "shop_leprechaun_buff", "two_for_one_buff"):
+    for key in ("shop_chat_buff", "shop_leprechaun_buff"):
         mod = _has_mod(user_id, key)
         if mod:
             _consume_mod(mod)
@@ -95,10 +94,9 @@ def resolve_admin_item_wheel(
     )
 
     _clear_shop_buff_mod(user.id)
-    from backend.pending_wheels import pop_shop_repick, pop_two_for_one
+    from backend.pending_wheels import pop_shop_repick
 
     pop_shop_repick(user.id)
-    pop_two_for_one(user.id)
 
     from backend.items.wheel_extras import (
         consume_one_extra_wheel_spin,
@@ -106,7 +104,7 @@ def resolve_admin_item_wheel(
         finish_extra_wheel_chain,
     )
 
-    # Рeroll магазина / «два по одному» расходует выделенный доп. прокрут.
+    # Reroll магазина расходует выделенный доп. прокрут.
     if extra_wheel_spins_left(user.id) > 0:
         consume_one_extra_wheel_spin(user.id)
 

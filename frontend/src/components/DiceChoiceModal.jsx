@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { apiPost } from "../api";
+import Die3D from "./dice/Die3D";
 
 export default function DiceChoiceModal({ choice, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
@@ -26,42 +28,45 @@ export default function DiceChoiceModal({ choice, onClose, onDone }) {
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div
-        className="modal-panel"
+    <motion.div
+      className="overlay overlay--casino"
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <motion.div
+        className="modal-panel modal-panel--casino"
         onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 24, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
       >
         <header>
           <h2>Читерский кубик</h2>
-          <button type="button" className="close" onClick={onClose}>
+          <button type="button" className="close" onClick={onClose} aria-label="Закрыть">
             ×
           </button>
         </header>
         <div className="modal-body">
           {isCheat && (
             <>
-              <p className="muted">
-                Бросок: кубик 1 = {dice[0]}, кубик 2 = {dice[1]}. Выберите,
-                какой заменить и на какое значение (1–6). Итог хода станет
-                известен после подтверждения.
-              </p>
-              <div className="dice-choice-row">
-                <button
-                  type="button"
-                  className={`btn ${cheatDie === 1 ? "primary" : ""}`}
-                  onClick={() => setCheatDie(1)}
-                >
-                  Кубик 1 ({dice[0]})
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${cheatDie === 2 ? "primary" : ""}`}
-                  onClick={() => setCheatDie(2)}
-                >
-                  Кубик 2 ({dice[1]})
-                </button>
+              <p className="casino-section-label">Текущий бросок</p>
+              <div className="cheat-dice-preview">
+                {[0, 1].map((i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`cheat-die-slot${cheatDie === i + 1 ? " selected" : ""}`}
+                    onClick={() => setCheatDie(i + 1)}
+                  >
+                    <Die3D value={dice[i] ?? 1} size="sm" />
+                    <label>Кубик {i + 1}</label>
+                  </button>
+                ))}
               </div>
-              <label className="field-label">Новое значение (1–6)</label>
+              <p className="muted">
+                Выберите кубик для подмены и новое значение (1–6).
+              </p>
+              <p className="casino-section-label">Новое значение</p>
               <div className="dice-choice-row">
                 {[1, 2, 3, 4, 5, 6].map((n) => (
                   <button
@@ -87,7 +92,7 @@ export default function DiceChoiceModal({ choice, onClose, onDone }) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

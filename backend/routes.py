@@ -7,6 +7,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from backend.board import get_board_json
 from backend.config import UPLOAD_DIR
 from backend.models import PlayerGame, User, db
+from backend.news_ticker import load_news_items
 from backend.rules import RULES_HTML
 from backend.services.game_lists import wheel_games
 from backend.services.scoring import points_for_completion
@@ -16,6 +17,7 @@ from backend.reward_wheels import open_reward_wheel_for_user, roll_reward_dice_f
 from backend.turn_actions import (
     reveal_trinity_dice_for_user,
     confirm_dice_roll_for_user,
+    confirm_dice_physics_for_user,
     confirm_wheel_for_user,
     dismiss_wheel_for_user,
     durka_roll_for_user,
@@ -72,6 +74,27 @@ def hltb_links():
 @api.route("/rules")
 def rules():
     return jsonify({"html": RULES_HTML})
+
+
+@api.route("/news-ticker")
+def news_ticker():
+    return jsonify({"items": load_news_items()})
+
+
+@api.route("/random/status")
+def random_status():
+    from backend.random_utils import random_meta
+    from backend.services.true_random import fetch_integers
+
+    probe = fetch_integers(1, 1, 6)
+    meta = random_meta()
+    return jsonify(
+        {
+            **meta,
+            "ok": probe is not None,
+            "sample": probe[0] if probe else None,
+        }
+    )
 
 
 @api.route("/players")
@@ -482,6 +505,16 @@ def wheel_preview():
 def http_roll_dice():
     data = request.get_json() or {}
     result = roll_dice_for_user(current_user, data)
+    if isinstance(result, tuple):
+        return jsonify(result[0]), result[1]
+    return jsonify(result)
+
+
+@api.route("/turn/confirm-dice-physics", methods=["POST"])
+@login_required
+def http_confirm_dice_physics():
+    data = request.get_json() or {}
+    result = confirm_dice_physics_for_user(current_user, data)
     if isinstance(result, tuple):
         return jsonify(result[0]), result[1]
     return jsonify(result)

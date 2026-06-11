@@ -27,19 +27,6 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         db.session.commit()
         return
 
-    if key == "two_for_one":
-        from backend.items.wheel_extras import add_extra_wheel_spins, prepare_extra_wheel_turn
-        from backend.pending_wheels import set_two_for_one
-
-        add_extra_wheel_spins(user.id, 1, label="Два по цене одного")
-        set_two_for_one(user.id)
-        prepare_extra_wheel_turn(user)
-        ctx.note(
-            "«Два по цене одного»: +1 прокрут; на рerolle засчитаются сектора сверху и снизу"
-        )
-        db.session.commit()
-        return
-
     if key in ("shop_chat", "shop_leprechaun"):
         from backend.items.wheel_extras import add_extra_wheel_spins, prepare_extra_wheel_turn
         from backend.pending_wheels import set_shop_repick

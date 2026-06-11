@@ -1,13 +1,24 @@
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { apiGet, apiPatch, apiPost, apiUpload, downloadApiFile } from "../api";
+import { EVENT_NAME, EVENT_TAGLINE } from "../branding";
 import { playerName } from "../playerName";
 import InventoryModal from "./InventoryModal";
 import TurnHistoryModal from "./TurnHistoryModal";
 import PagedListFooter, { usePagedSlice } from "./PagedListFooter";
+import CasinoPoints from "../ui/CasinoPoints";
+import VipChip from "../ui/VipChip";
+import VipCrest from "../ui/VipCrest";
+
+function historyStatus(g) {
+  if (g.status === "completed") return { label: "ПРОШЁЛ", cls: "completed" };
+  if (g.status === "dropped") return { label: "ДРОПНУЛ", cls: "dropped" };
+  return { label: "ИГРАЕТ", cls: "playing" };
+}
 
 export function RulesModal({ html, onClose }) {
   return (
-    <Modal title="Правила Игрополиуса" onClose={onClose}>
+    <Modal title={`Правила ${EVENT_NAME}`} onClose={onClose} casino>
       <div className="rules-content" dangerouslySetInnerHTML={{ __html: html }} />
     </Modal>
   );
@@ -15,31 +26,45 @@ export function RulesModal({ html, onClose }) {
 
 export function HistoryModal({ items, onClose }) {
   return (
-    <Modal title="История игр" onClose={onClose} wide>
-      <div className="history-list">
-        {items.map((g) => (
-          <article key={g.id} className="history-card">
-            <div className="badges">
-              <span className="badge purple">{g.displayName || g.username}</span>
-              <span
-                className={`badge ${g.status === "completed" ? "green" : g.status === "dropped" ? "red" : "gray"}`}
-              >
-                {g.status === "completed"
-                  ? "Прошёл"
-                  : g.status === "dropped"
-                    ? "Дропнул"
-                    : "Играет"}
-              </span>
-              {g.isDurka && <span className="badge red">Дурка</span>}
-            </div>
-            <h4>{g.title}</h4>
-            <p className="muted">
-              {g.cellName} · кубик {g.diceRoll}
-              {g.pointsEarned != null ? ` · +${g.pointsEarned}⚡` : ""}
-            </p>
-            {g.review && <p>{g.review}</p>}
-          </article>
-        ))}
+    <Modal title="История игр" onClose={onClose} wide casino>
+      <div className="history-list history-list--casino">
+        {items.map((g) => {
+          const status = historyStatus(g);
+          return (
+            <article key={g.id} className="history-card history-card--casino">
+              <div className="badges history-card__badges">
+                <span className="badge purple">
+                  {g.displayName || g.username}
+                </span>
+                <span
+                  className={`badge ${
+                    g.status === "completed"
+                      ? "green"
+                      : g.status === "dropped"
+                        ? "red"
+                        : "gray"
+                  }`}
+                >
+                  {status.label}
+                </span>
+                {g.isDurka && <span className="badge orange">Дурка</span>}
+              </div>
+              <h4 className="history-card__title">{g.title}</h4>
+              <p className="history-card__meta muted">
+                {g.cellName} · кубик {g.diceRoll ?? "—"}
+                {g.pointsEarned != null && (
+                  <>
+                    {" · "}
+                    <CasinoPoints value={g.pointsEarned} />
+                  </>
+                )}
+              </p>
+              {g.review && (
+                <p className="history-card__review">{g.review}</p>
+              )}
+            </article>
+          );
+        })}
       </div>
     </Modal>
   );
@@ -47,7 +72,7 @@ export function HistoryModal({ items, onClose }) {
 
 export function StatsModal({ rows, onClose }) {
   return (
-    <Modal title="Статистика" onClose={onClose} wide>
+    <Modal title="Статистика" onClose={onClose} wide casino>
       <table className="stats-table">
         <thead>
           <tr>
@@ -110,7 +135,14 @@ export function LoginModal({ accountData, onClose, onSuccess }) {
   };
 
   return (
-    <Modal title="Логин в Игрополиус" onClose={onClose}>
+    <Modal title="Вход в зал" onClose={onClose} casino>
+      <div className="login-casino-card">
+        <VipCrest subtitle="MEMBERS ONLY · CONCIERGE ACCESS" />
+        <VipChip label="VIP LOUNGE" pulse className="login-vip-chip" />
+        <p className="login-casino-logo">{EVENT_NAME}</p>
+        <p className="login-casino-tagline muted">{EVENT_TAGLINE}</p>
+        <p className="login-casino-whisper">High limit · Private tables · No riff-raff</p>
+      </div>
       <form onSubmit={submit} className="login-form">
         <div className="login-tabs">
           <button
@@ -132,7 +164,7 @@ export function LoginModal({ accountData, onClose, onSuccess }) {
           <>
             <label className="field-label">Участник</label>
             <select
-              className="input"
+              className="input select-styled"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             >
@@ -165,9 +197,6 @@ export function LoginModal({ accountData, onClose, onSuccess }) {
         >
           {submitting ? "Загрузка..." : "Войти"}
         </button>
-        <p className="muted login-hint">
-          Аккаунты заданы в <code>backend/accounts.py</code>
-        </p>
       </form>
     </Modal>
   );
@@ -326,15 +355,14 @@ export function ProfileModal({
   };
 
   return (
-    <Modal title={playerName(profile)} onClose={onClose} wide>
-      <div className="profile-head">
-        <img src={profile?.avatarUrl} alt="" className="avatar-lg" />
-        {isOwner && (
-          <label className="btn">
-            Сменить аватар
-            <input type="file" hidden accept="image/*" onChange={uploadAvatar} />
-          </label>
-        )}
+    <Modal title={playerName(profile)} onClose={onClose} wide casino>
+      <div className="profile-casino">
+      <div className="profile-hero-card">
+        <div className="profile-avatar-wrap">
+          <img src={profile?.avatarUrl} alt="" className="avatar-lg avatar-lg--vip" />
+          <span className="profile-vip-badge">VIP</span>
+          <span className="profile-high-roller">HIGH ROLLER</span>
+        </div>
         <div>
           {isOwner && editingName ? (
             <div className="rename-row">
@@ -385,14 +413,27 @@ export function ProfileModal({
               )}
             </div>
           )}
+          <div className="profile-stats-row">
+            <div className="profile-stat-chip">
+              <strong>{profile?.points ?? 0}</strong>
+              <span>Очки</span>
+            </div>
+            <div className="profile-stat-chip">
+              <strong>{profile?.completedCount ?? 0}</strong>
+              <span>Пройдено</span>
+            </div>
+            <div className="profile-stat-chip">
+              <strong>{profile?.droppedCount ?? 0}</strong>
+              <span>Дроп</span>
+            </div>
+          </div>
           {isOwner && (
-            <p className="muted profile-login-hint">Логин: {profile?.username}</p>
+            <label className="btn btn-sm" style={{ marginTop: 10, display: "inline-block" }}>
+              Сменить аватар
+              <input type="file" hidden accept="image/*" onChange={uploadAvatar} />
+            </label>
           )}
-          <p>Очки: {profile?.points}⚡</p>
-          <p>
-            Пройдено {profile?.completedCount} · Дроп {profile?.droppedCount}
-          </p>
-          <div className="btn-row profile-actions">
+          <div className="profile-toolbar">
             <button
               className="btn"
               type="button"
@@ -415,6 +456,7 @@ export function ProfileModal({
             </button>
           </div>
         </div>
+      </div>
       </div>
       {(inventory?.buffs?.length > 0 || inventory?.debuffs?.length > 0) && (
         <div className="profile-effects">
@@ -465,36 +507,52 @@ export function ProfileModal({
         </button>
       </div>
       <ul className="game-feed">
-        {gamesPaged.visible.map((g) => (
-          <li key={g.id} className="game-card">
-            <div className="game-card-head">
-              {g.status !== "pending_admin" && <span>{g.status}</span>}
-              {g.status === "pending_admin" && (
-                <span className="badge orange">ждёт админа</span>
-              )}
-              {g.isDurka && <span className="badge red">дурка</span>}
-            </div>
-            <h4>{g.title}</h4>
-            <p className="muted">
-              {g.cellName} · {g.genreLabel} · кубик {g.diceRoll}
-            </p>
-            {gameplayTags(g.gameplayTags)}
-            {g.status !== "pending_admin" && (
-              <p>
-                HLTB: {g.hltbHours ?? "—"} ч · Время:{" "}
-                {formatPlaySeconds(g.playSeconds, g.timerRunning, g.timerStartedAt)}
-                {g.pointsEarned != null
-                  ? ` · +${g.pointsEarned}⚡`
-                  : " · очки позже"}
-              </p>
-            )}
-            {g.review && g.status !== "pending_admin" && g.rating != null && (
-              <p>
-                {g.rating}/10 — {g.review}
-              </p>
-            )}
-          </li>
-        ))}
+        {gamesPaged.visible.map((g) => {
+          const statusBadge =
+            g.status === "active"
+              ? { cls: "green", label: "В игре" }
+              : g.status === "completed"
+                ? { cls: "purple", label: "Прошёл" }
+                : g.status === "dropped"
+                  ? { cls: "red", label: "Дроп" }
+                  : g.status === "pending_admin"
+                    ? { cls: "orange", label: "Ждёт админа" }
+                    : { cls: "gray", label: g.status };
+          return (
+            <li key={g.id} className="game-card game-card--casino">
+              <div className="game-card-inner">
+                <div className="game-card-head">
+                  <span className={`badge ${statusBadge.cls}`}>{statusBadge.label}</span>
+                  {g.isDurka && <span className="badge red">Дурка</span>}
+                </div>
+                <h4 className="game-card-title">{g.title}</h4>
+                <p className="game-card-meta muted">
+                  {g.cellName} · {g.genreLabel} · кубик {g.diceRoll ?? "—"}
+                </p>
+                {gameplayTags(g.gameplayTags)}
+                {g.status !== "pending_admin" && (
+                  <p className="game-card-stats">
+                    HLTB: {g.hltbHours ?? "—"} ч · Время:{" "}
+                    {formatPlaySeconds(g.playSeconds, g.timerRunning, g.timerStartedAt)}
+                    {g.pointsEarned != null ? (
+                      <>
+                        {" · "}
+                        <CasinoPoints value={g.pointsEarned} />
+                      </>
+                    ) : (
+                      " · очки позже"
+                    )}
+                  </p>
+                )}
+                {g.review && g.status !== "pending_admin" && g.rating != null && (
+                  <p className="game-card-review">
+                    <span className="game-card-rating">{g.rating}/10</span> — {g.review}
+                  </p>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       <PagedListFooter
         hasMore={gamesPaged.hasMore}
@@ -516,7 +574,7 @@ export function ProfileModal({
         </div>
       )}
       {isOwner && active && (
-        <div className="active-game-panel">
+        <div className="active-game-panel active-game-panel--casino">
           <h4 className="active-game-title">Текущая: {active.title}</h4>
           {active.gameplayTags?.length > 0 && (
             <div className="active-game-tags">{gameplayTags(active.gameplayTags)}</div>
@@ -584,22 +642,38 @@ export function ProfileModal({
   );
 }
 
-function Modal({ title, children, onClose, wide }) {
+function Modal({ title, children, onClose, wide, casino = false }) {
   return (
-    <div className="overlay" onClick={onClose}>
-      <div
-        className={`modal-panel ${wide ? "wide" : ""}`}
+    <motion.div
+      className={`overlay${casino ? " overlay--casino" : ""}`}
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <motion.div
+        className={`modal-panel ${wide ? "wide" : ""}${casino ? " modal-panel--casino" : ""}`}
         onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 28, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
       >
-        <header>
-          <h2>{title}</h2>
-          <button className="close" onClick={onClose}>
+        <header className={casino ? "modal-header--casino" : ""}>
+          <div className="modal-header__title-group">
+            {casino && (
+              <VipChip label="VIP" variant="platinum" className="modal-header__chip" />
+            )}
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="close" onClick={onClose} aria-label="Закрыть">
             ×
           </button>
         </header>
         <div className="modal-body">{children}</div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

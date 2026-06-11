@@ -27,7 +27,7 @@ class ItemDef:
     @property
     def wheel_label(self) -> str:
         tag = "▲" if self.polarity == "buff" else "▼"
-        return f"#{self.id} {tag} {self.name}"
+        return f"{tag} {self.name}"
 
     def to_dict(self) -> dict:
         return {

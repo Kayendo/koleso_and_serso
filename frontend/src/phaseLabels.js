@@ -14,3 +14,8 @@ export const PHASE_LABELS = {
 export function phaseLabel(phase) {
   return PHASE_LABELS[phase] || phase || "—";
 }
+
+export const PHASE_OPTIONS = Object.entries(PHASE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));

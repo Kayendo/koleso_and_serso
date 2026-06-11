@@ -288,7 +288,7 @@ def test_catalog_effect_handlers_exist(app):
     with app.app_context():
         user = User.query.filter_by(username="andryuha").first()
         for iid in range(1, 49):
-            if iid in (13, 18, 21, 31, 32, 35, 38, 39, 45):
+            if iid in (13, 18, 21, 23, 31, 32, 35, 38, 39, 45):
                 continue
             item = get_item(iid)
             ctx = _ctx(user, iid, targetUsername="zhenek", partnerUsername="zhenek")

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../api";
 import { playerName } from "../playerName";
+import { PHASE_OPTIONS } from "../phaseLabels";
 
 async function adminPatch(path, body) {
   const r = await fetch(`/api/admin${path}`, {
@@ -137,9 +138,9 @@ export default function AdminPanel({ onClose }) {
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay overlay--casino" onClick={onClose}>
       <div
-        className="modal-panel wide admin-panel"
+        className="modal-panel wide admin-panel modal-panel--casino"
         onClick={(e) => e.stopPropagation()}
       >
         <header>
@@ -175,7 +176,7 @@ export default function AdminPanel({ onClose }) {
                 <div className="admin-block">
                   <h4>Перемещение</h4>
                   <select
-                    className="input"
+                    className="input select-styled"
                     value={moveCell}
                     onChange={(e) => setMoveCell(e.target.value)}
                   >
@@ -193,7 +194,7 @@ export default function AdminPanel({ onClose }) {
                 <div className="admin-block">
                   <h4>Выдать предмет</h4>
                   <select
-                    className="input"
+                    className="input select-styled"
                     value={grantItemId}
                     onChange={(e) => setGrantItemId(e.target.value)}
                   >
@@ -219,7 +220,7 @@ export default function AdminPanel({ onClose }) {
                 <div className="admin-block">
                   <h4>Бафф / дебафф из каталога</h4>
                   <select
-                    className="input"
+                    className="input select-styled"
                     value={statusItemId}
                     onChange={(e) => setStatusItemId(e.target.value)}
                   >
@@ -245,7 +246,7 @@ export default function AdminPanel({ onClose }) {
                 <div className="admin-block">
                   <h4>Свой эффект</h4>
                   <select
-                    className="input"
+                    className="input select-styled"
                     value={customPolarity}
                     onChange={(e) => setCustomPolarity(e.target.value)}
                   >
@@ -287,7 +288,6 @@ export default function AdminPanel({ onClose }) {
                   {[
                     ["points", "Очки"],
                     ["position", "Позиция"],
-                    ["turnPhase", "Фаза"],
                     ["completedCount", "Пройдено"],
                     ["droppedCount", "Дроп"],
                     ["laps", "Круги"],
@@ -310,6 +310,22 @@ export default function AdminPanel({ onClose }) {
                       />
                     </label>
                   ))}
+                  <label>
+                    Фаза хода
+                    <select
+                      className="input select-styled"
+                      value={userForm.turnPhase ?? "idle"}
+                      onChange={(e) =>
+                        setUserForm({ ...userForm, turnPhase: e.target.value })
+                      }
+                    >
+                      {PHASE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label>
                     <input
                       type="checkbox"
