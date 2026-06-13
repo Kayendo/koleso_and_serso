@@ -327,6 +327,11 @@
   margin-bottom: 24px;
 }
 
+.reward-slot__chip {
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
 .reward-slot__actor {
   font-family: var(--font-display);
   font-size: 1.15rem;

@@ -474,8 +474,13 @@ export default function WheelModal({
     setAlreadyPlayed(false);
 
     const n = active.length;
+    const isItemWheel = itemWheel || spinCommand.wheelType === "item";
     const sim = new WheelPhysicsSim(n);
-    sim.startSpin(spinCommand.targetIndex, 3);
+    sim.startSpin(
+      spinCommand.targetIndex,
+      isItemWheel ? 3 : 12,
+      isItemWheel ? null : 58 + Math.random() * 4
+    );
     simRef.current = sim;
     let last = performance.now();
 

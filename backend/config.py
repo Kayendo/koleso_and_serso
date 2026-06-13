@@ -52,7 +52,7 @@ GENRE_FILES = {
 QUESTION_FILE = DATA_DIR / "games_question.txt"
 TRALLALERO_FILE = DATA_DIR / "games_trallalero.txt"
 
-WHEEL_SPIN_SECONDS = 30
+WHEEL_SPIN_SECONDS = 60
 PASS_START_POINTS = 5
 DROP_PENALTY = 2
 from backend.board import (

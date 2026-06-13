@@ -44,19 +44,22 @@ export class WheelPhysicsSim {
     return 0.05 + 0.95 * (1 - Math.pow(1 - u, 3.4));
   }
 
-  startSpin(targetIndex, extraTurns = 4) {
+  startSpin(targetIndex, extraTurns = 4, durationSec = null) {
     this.n = Math.max(1, this.n);
     this.targetIndex = targetIndex;
     this._startAngle = this.angle;
     const extra = extraTurns + Math.floor(Math.random() * 2);
     let target = WheelPhysicsSim.targetAngleRad(this.n, targetIndex, extra);
-    const minTravel = Math.PI * 2 * 3;
+    const minTravel = Math.PI * 2 * (durationSec != null && durationSec >= 20 ? 8 : 3);
     while (target - this._startAngle < minTravel) {
       target += Math.PI * 2;
     }
     this._targetAngle = target;
     this._elapsed = 0;
-    this._duration = 3.6 + Math.random() * 0.9;
+    this._duration =
+      durationSec != null
+        ? durationSec + Math.random() * 2
+        : 3.6 + Math.random() * 0.9;
     this.stopped = false;
     this.flapperAngle = 0;
     this.flapperOmega = 0;

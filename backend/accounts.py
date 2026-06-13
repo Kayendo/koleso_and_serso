@@ -1,13 +1,14 @@
 """Учётки: игроки на поле и отдельный админ (не участвует в игре)."""
 
 PLAYER_ACCOUNTS = [
-    {"username": "andryuha", "password": "koleso1"},
-    {"username": "zhenek", "password": "koleso2"},
-    {"username": "nikita", "password": "koleso3"},
-    {"username": "vanya", "password": "koleso4"},
+    {"username": "andryuha", "password": "residentevil6767"},
+    {"username": "zhenek", "password": "nigga67skibiditoilet"},
+    {"username": "nikita", "password": "postgresqlprofessional228"},
+    {"username": "alex", "password": "lexago7days2die"},
+    {"username": "vlados", "password": "bebebebababa228"},
 ]
 
 ADMIN_ACCOUNT = {
     "username": "admin",
-    "password": "admin99",
+    "password": "nikolatesla1337",
 }
