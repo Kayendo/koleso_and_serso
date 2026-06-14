@@ -2157,20 +2157,24 @@ select.input:focus {
 .admin-genre-grid {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.4rem;
   margin: 0.55rem 0;
-  max-height: min(220px, 32vh);
+  max-height: min(280px, 42vh);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 
 .admin-genre-grid .btn {
   width: 100%;
+  flex: 0 0 auto;
   text-align: left;
-  padding: 0.45rem 0.65rem;
+  padding: 0.55rem 0.7rem;
   font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .admin-wheel-turn .turn-hint {
