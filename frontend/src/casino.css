@@ -1274,6 +1274,7 @@ select.input option {
 
 .turn-panel--vip {
   position: relative;
+  flex-shrink: 0;
   background:
     linear-gradient(165deg, rgba(232, 196, 104, 0.12), rgba(62, 232, 168, 0.06)),
     rgba(0, 0, 0, 0.25) !important;
@@ -1281,7 +1282,7 @@ select.input option {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .turn-panel--vip::before {
