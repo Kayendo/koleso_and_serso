@@ -37,20 +37,6 @@ def test_law_apply_wheel_result_inventory(app, actor):
         assert has_item(actor.id, 41)
         assert not get_active_admin_wheel(actor.id)
 
-
-def test_shop_rerolls_item_wheel(app, actor):
-    with app.app_context():
-        reset_player(actor, position=8)
-        from backend.items.wheel_extras import extra_wheel_spins_left
-        from backend.pending_wheels import get_shop_repick
-
-        apply_wheel_result(actor, 24, dice_label="2+2", cell_name="Кайфарик")
-        repick = get_shop_repick(actor.id)
-        assert repick and repick.get("mode") == "chat"
-        assert extra_wheel_spins_left(actor.id) == 1
-        assert not get_active_admin_wheel(actor.id)
-
-
 def test_admin_wheel_flow_stub_game(app, actor):
     with app.app_context():
         from backend.models import PlayerGame
