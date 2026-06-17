@@ -148,6 +148,17 @@ export default function QuickMenu({
           {loading ? LOADING : "Ролл в дурке"}
         </button>
       );
+    } else if (phase === "wheel_ready" && currentUser.inDurka) {
+      const loading = actionLoading === "wheel" || actionLoading === "durka";
+      turnButton = (
+        <button
+          className="btn primary full"
+          onClick={onDurkaRoll}
+          disabled={busy}
+        >
+          {loading ? LOADING : "Ролл в дурке"}
+        </button>
+      );
     } else if (phase === "wheel_ready") {
       const loading = actionLoading === "wheel";
 

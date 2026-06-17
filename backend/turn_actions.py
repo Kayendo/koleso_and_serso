@@ -455,19 +455,19 @@ def _animate_and_finish(
         )
 
 
-def durka_roll_for_user(user: User) -> dict | tuple[dict, int]:
-    err = require_phase(user, "durka")
-    if err:
-        return {"error": err}, 400
-    if not user.in_durka:
-        return {"error": "Ролл в дурке доступен только после дропа"}, 400
+def _open_durka_wheel(user: User) -> dict:
+    """Колесо в дурке после дропа: случайный жанр + 12 игр."""
+    from backend.board import DURKA_CELL_ID, GENRE_LABELS
 
-    from backend.board import GENRE_LABELS
+    if not user.in_durka:
+        return {"error": "Ролл в дурке доступен только после дропа"}
+    if user.position != DURKA_CELL_ID:
+        return {"error": "Для ролла в дурке игрок должен быть на клетке «Дурка»"}
 
     gid = game_lists.blazerd_genre_roll()
     wheel = game_lists.wheel_games(gid, 12)
     if not wheel:
-        return {"error": f"Нет игр для жанра {gid}"}, 400
+        return {"error": f"Нет игр для жанра {gid}"}
 
     user.turn_phase = "wheel"
     _pending_wheel[user.id] = wheel
@@ -494,6 +494,16 @@ def durka_roll_for_user(user: User) -> dict | tuple[dict, int]:
     }
     _emit("wheel_opened", payload)
     return payload
+
+
+def durka_roll_for_user(user: User) -> dict | tuple[dict, int]:
+    if user.turn_phase not in ("durka", "wheel_ready", "wheel"):
+        err = require_phase(user, "durka")
+        return {"error": err}, 400
+    result = _open_durka_wheel(user)
+    if "error" in result:
+        return result, 400
+    return result
 
 
 def durka_step_for_user(user: User, direction: str) -> dict | tuple[dict, int]:
@@ -664,6 +674,14 @@ def _apply_pending_spin_to_payload(user_id: int, payload: dict) -> None:
 
 def open_wheel_for_user(user: User, genre_id: int | None = None) -> dict | tuple[dict, int]:
     from backend.pending_wheels import consume_chocolate_genre
+
+    if user.in_durka and user.position == DURKA_CELL_ID:
+        if user.turn_phase not in ("wheel_ready", "durka", "wheel"):
+            return {"error": "Неверная фаза для ролла в дурке"}, 400
+        result = _open_durka_wheel(user)
+        if "error" in result:
+            return result, 400
+        return result
 
     choc_genre = consume_chocolate_genre(user.id)
     if choc_genre is not None:
