@@ -193,6 +193,15 @@ def admin_grant_item(user_id: int):
     )
 
 
+@admin_api.route("/users/<int:user_id>/inventory")
+@admin_required
+def admin_user_inventory(user_id: int):
+    User.query.get_or_404(user_id)
+    from backend.items.inventory import get_inventory_state
+
+    return jsonify(get_inventory_state(user_id))
+
+
 @admin_api.route("/users/<int:user_id>/remove-item", methods=["POST"])
 @admin_required
 def admin_remove_item(user_id: int):
@@ -201,9 +210,19 @@ def admin_remove_item(user_id: int):
     item_id = data.get("itemId")
     if not item_id:
         return jsonify({"error": "itemId обязателен"}), 400
-    remove_all(user.id, int(item_id))
-    from backend.items.inventory import get_inventory_state
+    from backend.items.catalog import get_item
+    from backend.items.inventory import get_inventory_state, log_turn
 
+    item = get_item(int(item_id))
+    name = item.name if item else f"#{item_id}"
+    remove_all(user.id, int(item_id))
+    log_turn(
+        user.id,
+        summary=f"Админ: снят предмет «{name}»",
+        factors=[f"Админ {current_user.username}: удалён «{name}»"],
+        extra={"admin": True, "itemId": int(item_id), "itemRemoved": True},
+    )
+    _emit_board()
     return jsonify({"ok": True, "inventory": get_inventory_state(user.id)})
 
 
@@ -281,6 +300,16 @@ def admin_clear_status(user_id: int):
         mod = PlayerModifier.query.filter_by(
             id=int(mod_id), user_id=user.id
         ).first_or_404()
+        from backend.items.inventory import log_turn
+
+        log_turn(
+            user.id,
+            summary=f"Админ: снят эффект «{mod.label or mod.effect_key}»",
+            factors=[
+                f"Админ {current_user.username}: удалён «{mod.label or mod.effect_key}»"
+            ],
+            extra={"admin": True, "modifierId": mod.id, "modifierRemoved": True},
+        )
         db.session.delete(mod)
     else:
         polarity = data.get("polarity")
@@ -290,6 +319,7 @@ def admin_clear_status(user_id: int):
         for m in q.all():
             db.session.delete(m)
     db.session.commit()
+    _emit_board()
     from backend.items.inventory import get_inventory_state
 
     return jsonify({"ok": True, "inventory": get_inventory_state(user.id)})

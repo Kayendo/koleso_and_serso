@@ -42,6 +42,10 @@ def _key_val(effect: str) -> tuple[str, str]:
 
 
 def _charges(item: ItemDef) -> int:
+    if item.kind == "trap":
+        from backend.items.inventory import trap_effect_turns
+
+        return trap_effect_turns(item)
     _, v = _key_val(item.effect)
     try:
         return max(1, int(v))
@@ -306,14 +310,17 @@ def _trap_fisting(ctx: EffectContext, user: User) -> None:
     if not thrower:
         ctx.note("Не найден игрок, применивший ловушку")
         return
-    if inv.has_item(target.id, 19):
-        ctx.note("У цели уже есть рука для fisting")
+    from backend.items.modifiers import _has_mod
+
+    if _has_mod(target.id, "slave"):
+        ctx.note("У цели уже действует «Рука для fisting»")
         return
+    steals = _charges(ctx.item)
     _add_mod(
         target.id,
         "slave",
         str(thrower.id),
-        5,
+        steals,
         item_id=19,
         label="Рука для fisting",
         desc="0",

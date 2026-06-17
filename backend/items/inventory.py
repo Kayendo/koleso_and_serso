@@ -45,7 +45,20 @@ def _charges_from_effect(item: ItemDef) -> int:
     if not item.effect or ":" not in item.effect:
         return 1
     key, val = _effect_key_val(item)
+    if item.kind == "trap":
+        return 1
     if key == "time_rings":
+        return 1
+    try:
+        return max(1, int(val))
+    except ValueError:
+        return 1
+
+
+def trap_effect_turns(item: ItemDef) -> int:
+    """Длительность/сила эффекта ловушки (число после «:» в effect)."""
+    key, val = _effect_key_val(item)
+    if item.kind != "trap":
         return 1
     try:
         return max(1, int(val))

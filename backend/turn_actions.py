@@ -407,7 +407,12 @@ def _animate_and_finish(
             },
         )
 
-        bonus = apply_start_bonus(user, passed) if not user.in_durka and not backward else 0
+        skip_start_bonus = bool(user.no_start_bonus_lap)
+        bonus = (
+            apply_start_bonus(user, passed)
+            if not user.in_durka and not backward
+            else 0
+        )
         user.position = new_pos
         if new_pos == DURKA_CELL_ID and not user.in_durka:
             user.turn_phase = "durka_choice"
@@ -419,6 +424,8 @@ def _animate_and_finish(
 
         tick_notes = tick_turn_modifiers(user.id)
         all_factors = list(factors) + tick_notes
+        if skip_start_bonus and passed and bonus == 0:
+            all_factors.append("Дурка на круге: без +5 за проход через старт")
 
         _, src = _wheel_games_for_cell(new_pos)
         cell = BOARD_BY_ID[new_pos]

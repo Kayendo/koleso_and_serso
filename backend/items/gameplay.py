@@ -218,14 +218,31 @@ def tick_buffs_after_game(user_id: int) -> list[str]:
             continue
         mod.turns_remaining -= 1
         if mod.turns_remaining <= 0:
-            if (
-                mod.effect_value == "pending_charge"
-                and mod.source_item_id
-                and mod.effect_key in CHARGE_BUFF_ACTIVATE
-            ):
-                inv.consume_inventory_item(user_id, mod.source_item_id)
-            notes.append(f"Снят эффект «{mod.label}»")
+            label = mod.label or mod.effect_key
+            item_id = mod.source_item_id
+            effect_key = mod.effect_key
+            polarity = mod.polarity or "buff"
+            pending = mod.effect_value == "pending_charge"
+            if pending and item_id and effect_key in CHARGE_BUFF_ACTIVATE:
+                inv.consume_inventory_item(user_id, item_id)
+            notes.append(f"Снят эффект «{label}»")
             db.session.delete(mod)
+            db.session.flush()
+            if (
+                item_id
+                and effect_key in CHARGE_BUFF_ACTIVATE
+                and inv.has_item(user_id, item_id)
+            ):
+                activate_buff_for_next_game(
+                    user_id,
+                    effect_key,
+                    item_id=item_id,
+                    label=label,
+                    polarity=polarity,
+                    turns=1,
+                    pending_inventory_charge=True,
+                )
+                notes.append(f"«{label}»: автоматически на следующую игру")
     db.session.commit()
     return notes
 

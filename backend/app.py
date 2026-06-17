@@ -136,6 +136,14 @@ def _migrate_schema():
             )
         )
         conn.commit()
+    cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(users)"))}
+    if "no_start_bonus_lap" not in cols:
+        conn.execute(
+            sa.text(
+                "ALTER TABLE users ADD COLUMN no_start_bonus_lap BOOLEAN DEFAULT 0"
+            )
+        )
+        conn.commit()
     cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(player_games)"))}
     if "gameplay_tags" not in cols:
         conn.execute(

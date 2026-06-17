@@ -139,17 +139,27 @@ def create_player_game(
 def apply_start_bonus(user: User, passed: bool) -> int:
     if not passed:
         return 0
-    user.points += PASS_START_POINTS
     if user.position == START_CELL_ID:
         user.laps += 1
+    if user.no_start_bonus_lap:
+        user.no_start_bonus_lap = False
+        db.session.commit()
+        return 0
+    user.points += PASS_START_POINTS
     db.session.commit()
     return PASS_START_POINTS
+
+
+def mark_durka_drop_lap(user: User) -> None:
+    """Дроп в дурку: на этом круге нет +5 за проход через старт."""
+    user.no_start_bonus_lap = True
 
 
 def send_to_durka(user: User) -> None:
     user.position = DURKA_CELL_ID
     user.in_durka = True
     user.turn_phase = "durka"
+    mark_durka_drop_lap(user)
     db.session.commit()
 
 
@@ -171,6 +181,7 @@ def after_drop(user: User, on_durka_cell: bool) -> None:
     if on_durka_cell or user.in_durka:
         user.points = max(0, user.points - DROP_PENALTY)
         user.turn_phase = "durka"
+        mark_durka_drop_lap(user)
     else:
         send_to_durka(user)
     db.session.commit()

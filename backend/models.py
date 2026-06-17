@@ -28,6 +28,7 @@ class User(UserMixin, db.Model):
     reroll_count = db.Column(db.Integer, default=0)
     laps = db.Column(db.Integer, default=0)
     in_durka = db.Column(db.Boolean, default=False)
+    no_start_bonus_lap = db.Column(db.Boolean, default=False)
     turn_phase = db.Column(db.String(32), default="idle")
     last_position = db.Column(db.Integer, nullable=True)
     pending_reward_spins = db.Column(db.Integer, default=0)

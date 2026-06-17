@@ -45,6 +45,13 @@ export default function AdminPanel({ onClose }) {
   const [customKey, setCustomKey] = useState("dice_penalty_next");
   const [customVal, setCustomVal] = useState("1");
   const [moveCell, setMoveCell] = useState("0");
+  const [playerInv, setPlayerInv] = useState({ items: [], buffs: [], debuffs: [] });
+
+  const loadPlayerInventory = async (playerId) => {
+    const inv = await apiGet(`/admin/users/${playerId}/inventory`);
+    setPlayerInv(inv);
+    return inv;
+  };
 
   const load = async () => {
     const list = await apiGet("/admin/players");
@@ -65,6 +72,13 @@ export default function AdminPanel({ onClose }) {
     setGames(data.games);
     const active = (data.games || []).find((g) => g.status === "active");
     setGameForm(active ? { ...active } : null);
+    await loadPlayerInventory(p.id);
+  };
+
+  const refreshPlayer = async () => {
+    if (!selected) return;
+    await pickPlayer(selected);
+    load();
   };
 
   const saveUser = async () => {
@@ -88,7 +102,7 @@ export default function AdminPanel({ onClose }) {
       quantity: parseInt(grantQty, 10) || 1,
     });
     setMsg("Предмет выдан");
-    pickPlayer(selected);
+    refreshPlayer();
   };
 
   const applyStatusFromItem = async () => {
@@ -97,7 +111,7 @@ export default function AdminPanel({ onClose }) {
       turns: parseInt(statusTurns, 10) || 1,
     });
     setMsg("Статус навешен");
-    pickPlayer(selected);
+    refreshPlayer();
   };
 
   const applyCustomStatus = async () => {
@@ -109,7 +123,7 @@ export default function AdminPanel({ onClose }) {
       turns: parseInt(statusTurns, 10) || 1,
     });
     setMsg("Кастомный эффект навешен");
-    pickPlayer(selected);
+    refreshPlayer();
   };
 
   const clearBuffs = async () => {
@@ -117,7 +131,7 @@ export default function AdminPanel({ onClose }) {
       polarity: "buff",
     });
     setMsg("Баффы сняты");
-    pickPlayer(selected);
+    refreshPlayer();
   };
 
   const clearDebuffs = async () => {
@@ -125,7 +139,19 @@ export default function AdminPanel({ onClose }) {
       polarity: "debuff",
     });
     setMsg("Дебаффы сняты");
-    pickPlayer(selected);
+    refreshPlayer();
+  };
+
+  const removeItem = async (itemId) => {
+    await adminPost(`/users/${selected.id}/remove-item`, { itemId });
+    setMsg("Предмет удалён");
+    refreshPlayer();
+  };
+
+  const removeModifier = async (modifierId) => {
+    await adminPost(`/users/${selected.id}/clear-status`, { modifierId });
+    setMsg("Эффект снят");
+    refreshPlayer();
   };
 
   const pickGame = (g) => setGameForm({ ...g });
@@ -204,6 +230,80 @@ export default function AdminPanel({ onClose }) {
                   <button type="button" className="btn primary" onClick={movePlayer}>
                     Переместить на клетку
                   </button>
+                </div>
+
+                <div className="admin-block">
+                  <h4>Инвентарь и эффекты</h4>
+                  <p className="muted admin-inv-hint">
+                    Точечное снятие предметов и активных баффов/дебаффов.
+                  </p>
+                  <div className="admin-inv-section">
+                    <h5>Предметы</h5>
+                    {playerInv.items?.length ? (
+                      <ul className="admin-inv-list">
+                        {playerInv.items.map((it) => (
+                          <li key={it.itemId} className="admin-inv-row">
+                            <span>
+                              #{it.itemId} {it.name}
+                              {it.charges != null ? ` · ${it.charges} зар.` : ""}
+                              {it.isTrap ? " · ловушка" : ""}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-sm danger"
+                              onClick={() => removeItem(it.itemId)}
+                            >
+                              Удалить
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Пусто</p>
+                    )}
+                  </div>
+                  <div className="admin-inv-section">
+                    <h5>Баффы</h5>
+                    {playerInv.buffs?.length ? (
+                      <ul className="admin-inv-list">
+                        {playerInv.buffs.map((b) => (
+                          <li key={b.id} className="admin-inv-row">
+                            <span>{b.displayLine || b.name}</span>
+                            <button
+                              type="button"
+                              className="btn btn-sm danger"
+                              onClick={() => removeModifier(b.id)}
+                            >
+                              Снять
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Нет</p>
+                    )}
+                  </div>
+                  <div className="admin-inv-section">
+                    <h5>Дебаффы</h5>
+                    {playerInv.debuffs?.length ? (
+                      <ul className="admin-inv-list">
+                        {playerInv.debuffs.map((b) => (
+                          <li key={b.id} className="admin-inv-row">
+                            <span>{b.displayLine || b.name}</span>
+                            <button
+                              type="button"
+                              className="btn btn-sm danger"
+                              onClick={() => removeModifier(b.id)}
+                            >
+                              Снять
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Нет</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="admin-block">
