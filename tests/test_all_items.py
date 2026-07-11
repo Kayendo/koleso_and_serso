@@ -179,7 +179,6 @@ def test_ez_attaches_to_game(app, actor):
             (22, "wheel_extra_spins"),
         (26, None),
         (27, None),
-        (28, None),
         (29, "wheel_extra_spins"),
         (30, "wheel_extra_spins"),
         (33, None),

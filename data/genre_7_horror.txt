@@ -14,6 +14,7 @@ Five Nights at Freddy's 4
 Five Nights at Freddy's: Sister Location
 Freddy Fazbear's Pizzeria Simulator
 Five Nights at Freddy's: Security Breach
+Little Misfortune
 Little Nightmares 
 Little Nightmares 2
 The Inn-sanity
@@ -30,6 +31,7 @@ Reanimal
 Centum
 The Callisto Protocol
 Five Nights at Freddy’s: Secret of the Mimic
+MOLE
 The Midnight Walk
 Resident Evil 3
 The Sinking City Remastered
@@ -65,16 +67,19 @@ Onryo
 The Ghost Station
 The Caregiver
 The Radio Station
+Sorry We're Closed
 The Kidnap
 Visage
 Granny
 Granny 3
 Anatomy
+Bendy and the Dark Revival
 Cold Fear
 The Medium
 Alien: Isolation
 Fatal Frame: Maiden of Black Water
 Tormented Souls
+Bendy and the Ink Machine
 Amnesia: The Dark Descent
 Amnesia: Rebirth
 Amnesia: The Bunker
@@ -82,6 +87,8 @@ SOMA
 Layers of Fear
 Layers of Fear 2
 Madison 
+CARRION
+Bendy: Lone Wolf
 From the Darkness
 Darkwood 
 Cry of Fear

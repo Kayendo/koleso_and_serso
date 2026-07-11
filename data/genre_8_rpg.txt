@@ -27,7 +27,9 @@ The RPG
 Dragon Age Vileguard
 Dragons Dogma
 Dragons Dogma 2
+Trails in the Sky 1st Chapter
 Coldfire Keep
+Granblue Fantasy: Relink
 TES Morrowind
 Divine Divinity
 TES Oblivion
@@ -115,6 +117,9 @@ CHRONO TRIGGER
 Starfield 
 Dragon Quest XI S
 Undertail
+Exiled Kingdoms
+Archaelund
+Cabernet
 Biomutant 
 Stranger of Paradise: Final Fantasy Origin
 Fear & Hunger 1 
@@ -133,6 +138,7 @@ The Fall: Last Days of Gaia
 Archangel
 Arx Fatalis
 Solasta: Crown of the Magister
+King Arthur Knight's Tale
 Esoteric Ebb
 Shadow Gambit: The Cursed Crew
 Solasta II
@@ -143,7 +149,6 @@ ELDER SCROLLS ONLINE Уровень 15 и полный зачист старто
 GUILD WARS 2 Уровень 30 и первый пройденный данж
 OLD SCHOOL RUNESCAPE Combat Level 40 и прохождение квеста Merlin's Crystal
 WORLD OF WARCRAFT MIDNIGHT макс левел + кампания
-WORLD OF WARCRAFT LEGION макс левел + кампания
 WORLD OF WARCRAFT BURNING CRUSADE 30 Уровень
 WORLD OF WARCRAFT WOTLK 30 Уровень
 STAR WARS THE OLD REPUBLIC Конец первого акта класса (15-18 уровень) и выбор Advanced Class

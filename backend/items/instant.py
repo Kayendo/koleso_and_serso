@@ -5,7 +5,7 @@ from __future__ import annotations
 from backend.board import BOARD_BY_ID, BOARD_SIZE
 from backend.items import inventory as inv
 from backend.items.effects import EffectContext
-from backend.items.modifiers import _add_mod, count_inventory_debuffs
+from backend.items.modifiers import add_or_extend_mod, count_inventory_debuffs
 from backend.models import PlayerInventoryItem, PlayerModifier, User, db
 from backend.random_utils import choice, randbelow
 
@@ -81,20 +81,6 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         )
         return
 
-    if key == "castling":
-        tid = ctx.options.get("targetUserId")
-        if not tid:
-            ctx.note("«Рокировочка»: укажите игрока")
-            return
-        other = db.session.get(User, int(tid))
-        if not other:
-            ctx.note("Игрок не найден")
-            return
-        user.position, other.position = other.position, user.position
-        ctx.note(f"«Рокировочка» с {other.username}")
-        db.session.commit()
-        return
-
     if key == "swap_inv_random":
         players = User.query.filter(
             User.is_player == True, User.id != user.id
@@ -123,7 +109,7 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
             delta = 2
             user.points += 1
             ctx.note("«Помощь отстающему»: +1 очко (последнее место)")
-        _add_mod(
+        add_or_extend_mod(
             user.id,
             "help_laggard",
             str(delta),
@@ -136,12 +122,14 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         return
 
     if key == "hurry":
-        _add_mod(user.id, "hurry", "1", 1, item_id=36, label="Торопыга", polarity="debuff")
+        add_or_extend_mod(
+            user.id, "hurry", "1", 1, item_id=36, label="Торопыга", polarity="debuff"
+        )
         ctx.note("«Торопыга»: след. клетка — 1 базовый поинт")
         return
 
     if key == "trinity_dice":
-        _add_mod(
+        add_or_extend_mod(
             user.id,
             "trinity_dice",
             "1",
@@ -153,7 +141,7 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         return
 
     if key == "base_only_next":
-        _add_mod(
+        add_or_extend_mod(
             user.id,
             "base_only_next",
             "1",
@@ -166,7 +154,9 @@ def apply_instant_wheel_effect(ctx: EffectContext, user: User) -> None:
         return
 
     if key == "hour_growth":
-        _add_mod(user.id, "hour_growth", "1", 1, item_id=48, label="Часовой рост")
+        add_or_extend_mod(
+            user.id, "hour_growth", "1", 1, item_id=48, label="Часовой рост"
+        )
         ctx.note("«Часовой рост»: на след. клетке ×2 за 10ч")
         return
 

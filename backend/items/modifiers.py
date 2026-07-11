@@ -47,6 +47,45 @@ def _add_mod(
     )
 
 
+def add_or_extend_mod(
+    user_id: int,
+    key: str,
+    value: str,
+    turns: int,
+    *,
+    item_id: int | None = None,
+    label: str = "",
+    desc: str = "",
+    polarity: str = "buff",
+) -> None:
+    """Один активный модификатор на ключ; повторное выпадение продлевает срок."""
+    existing = _has_mod(user_id, key)
+    if existing:
+        existing.turns_remaining = max(0, int(existing.turns_remaining or 0)) + turns
+        if value:
+            existing.effect_value = value
+        if label:
+            existing.label = label
+        if item_id is not None:
+            existing.source_item_id = item_id
+        if desc:
+            existing.description = desc
+        if polarity:
+            existing.polarity = polarity
+        db.session.commit()
+        return
+    _add_mod(
+        user_id,
+        key,
+        value,
+        turns,
+        item_id=item_id,
+        label=label,
+        desc=desc,
+        polarity=polarity,
+    )
+
+
 def _consume_mod(mod: PlayerModifier) -> None:
     if mod.turns_remaining > 0:
         mod.turns_remaining -= 1

@@ -96,7 +96,6 @@ def apply_item_effect(ctx: EffectContext, user: User, db_sess) -> None:
     if key.startswith("wheel_") or key in (
         "bandit",
         "dirtykin",
-        "castling",
         "swap_inv_random",
         "help_laggard",
         "hurry",

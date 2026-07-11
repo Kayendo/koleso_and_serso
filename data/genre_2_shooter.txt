@@ -117,6 +117,7 @@ Fallout 3
 Fallout New Vegas
 Fallout 4
 Star Wars: Battlefront II
+OPERATOR
 Warhammer 40,000: Darktide
 Severed Steel
 System Shock 1
@@ -147,7 +148,6 @@ WRATH: Aeon of Ruin
 Forgive Me Father
 Call of Duty (2003)
 Call of Duty 2 (2005)
-Call of Duty 3 (2006)
 Call of Duty 4: Modern Warfare (2007)
 Call of Duty: World at War (2008)
 Call of Duty: Modern Warfare 2 (2009)
